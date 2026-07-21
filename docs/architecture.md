@@ -25,6 +25,7 @@ All three components run as separate Docker containers, orchestrated locally via
 ## Frontend
 
 - **Framework**: React + TypeScript
+- **Package manager**: pnpm
 - **Styling/components**: Tailwind CSS + shadcn/ui
 - **Editor**: [Tiptap](https://tiptap.dev/), configured with StarterKit (headings, lists incl.
   task lists, blockquote, code blocks, links) plus GFM tables/strikethrough, a text-style/color
@@ -43,6 +44,12 @@ All three components run as separate Docker containers, orchestrated locally via
 ## Backend
 
 - **Framework**: Python + FastAPI
+- **Package manager**: [uv](https://docs.astral.sh/uv/)
+- **Project layout**: flat `app/` package at the root of `web-api/` (no `src/` indirection),
+  following [FastAPI's "Bigger Applications" structure](https://fastapi.tiangolo.com/tutorial/bigger-applications/)
+  — `app/main.py`, `app/routers/`, etc. The project is managed as a `uv` application (no
+  `[build-system]`/installable-package metadata), since it's run directly via uvicorn rather than
+  distributed as a library.
 - **Typing**: favor specific, precise types throughout — Pydantic models/enums for
   request/response schemas rather than raw `dict`/`Any`, and typed SQLAlchemy columns for
   persistence models.
@@ -91,7 +98,7 @@ All three components run as separate Docker containers, orchestrated locally via
 ## Containerization
 
 - Separate `Dockerfile` for the frontend and for the backend.
-- A root-level `docker-compose.yml` wires together: `frontend`, `backend`, and `postgres`
+- A root-level `docker-compose.yml` wires together: `web`, `web-api`, and `postgres`
   (with a named volume so diary data persists across restarts), plus a second named volume for
   the backend's uploaded-images directory.
 - Configuration via environment variables, e.g. `DATABASE_URL` for the backend's Postgres
@@ -100,8 +107,8 @@ All three components run as separate Docker containers, orchestrated locally via
 ## Repository layout (proposed)
 
 ```
-frontend/    React + TypeScript app
-backend/     FastAPI app
+web/         React + TypeScript app
+web-api/     FastAPI app
 docs/        Requirements, architecture, roadmap
 ```
 

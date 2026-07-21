@@ -1,2 +1,13 @@
 # AI
 .claude
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+web-api/.venv/
+
+# Node (web/ ships its own .gitignore for node_modules/dist, but cover it at the root too)
+node_modules/
+web/dist/
+web/build/
