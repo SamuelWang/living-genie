@@ -102,7 +102,8 @@ All three components run as separate Docker containers, orchestrated locally via
   (with a named volume so diary data persists across restarts), plus a second named volume for
   the backend's uploaded-images directory.
 - Configuration via environment variables, e.g. `DATABASE_URL` for the backend's Postgres
-  connection.
+  connection. Each service owns its own `.env`/`.env.example` (e.g. `web-api/.env.example`)
+  rather than a single shared root file; Compose wires each in per-service via `env_file:`.
 
 ## Repository layout (proposed)
 

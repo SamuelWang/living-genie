@@ -7,6 +7,9 @@ __pycache__/
 .venv/
 web-api/.venv/
 
+# Env files (each app owns its own .env / .env.example)
+.env
+
 # Node (web/ ships its own .gitignore for node_modules/dist, but cover it at the root too)
 node_modules/
 web/dist/
