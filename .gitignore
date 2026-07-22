@@ -12,6 +12,7 @@ web-api/.venv/
 
 # Uploaded files (local dev; backed by a Docker volume in deployed environments)
 web-api/uploads/
+web-api/tests/.uploads-test/
 
 # Node (web/ ships its own .gitignore for node_modules/dist, but cover it at the root too)
 node_modules/
