@@ -1,17 +1,17 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiaryEntryCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1)
     content: str = ""
     entry_date: date | None = None
 
 
 class DiaryEntryUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1)
     content: str | None = None
     entry_date: date | None = None
 
@@ -33,3 +33,7 @@ class DiaryEntrySummary(BaseModel):
     id: uuid.UUID
     title: str
     entry_date: date
+
+
+class UploadResponse(BaseModel):
+    url: str

@@ -10,6 +10,9 @@ web-api/.venv/
 # Env files (each app owns its own .env / .env.example)
 .env
 
+# Uploaded files (local dev; backed by a Docker volume in deployed environments)
+web-api/uploads/
+
 # Node (web/ ships its own .gitignore for node_modules/dist, but cover it at the root too)
 node_modules/
 web/dist/
