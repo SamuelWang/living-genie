@@ -1,7 +1,7 @@
 [project]
 name = "web-api"
 version = "0.1.0"
-description = "Add your description here"
+description = "Backend API for Living Genie."
 readme = "README.md"
 authors = [
     { name = "Samuel Wang", email = "chieh0919@gmail.com" }
