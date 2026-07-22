@@ -54,7 +54,29 @@ All three components run as separate Docker containers, orchestrated locally via
   request/response schemas rather than raw `dict`/`Any`, and typed SQLAlchemy columns for
   persistence models.
 - **Database access**: SQLAlchemy ORM, with Alembic for schema migrations.
-- **API**: REST endpoints for diary CRUD:
+- **Auth**: server-side session authentication via an `HttpOnly` cookie — `POST /auth/login`
+  creates a row in the `sessions` table and sets a `SameSite=Lax` session cookie; the browser then
+  sends that cookie automatically on every subsequent request to the API (including `<img>` loads
+  of uploaded images, unlike a bearer token, which the browser never attaches to those). All diary,
+  upload, and media endpoints require a valid session and operate only on the authenticated user's
+  own data. `POST /auth/logout` deletes the session server-side, which a stateless token couldn't
+  support. Passwords are hashed with `pwdlib` (Argon2). **Deployment constraint**: because
+  `SameSite=Lax` cookies are only sent for same-site requests (same registrable domain, any port),
+  the frontend and backend must be deployed under the same site — this replaces the
+  origin-agnostic nature the earlier JWT-bearer approach had. CORS is configured with
+  `allow_credentials=True` and an explicit `frontend_origin` (not `*`, which the browser rejects
+  for credentialed requests) so the cookie is actually sent/accepted across the frontend/backend
+  ports.
+- **API**: REST endpoints for auth:
+
+  | Method | Path              | Description                          |
+  |--------|-------------------|------------------------------------------|
+  | POST   | `/auth/register`  | Create a new user account                |
+  | POST   | `/auth/login`     | Authenticate; sets the session cookie    |
+  | POST   | `/auth/logout`    | Ends the session; clears the cookie      |
+
+  All endpoints below require a valid session cookie and are scoped to the authenticated user.
+  Diary CRUD:
 
   | Method | Path             | Description                        |
   |--------|------------------|-------------------------------------|
@@ -72,10 +94,13 @@ All three components run as separate Docker containers, orchestrated locally via
 
 - **Media storage**: uploaded images are saved to a directory backed by a dedicated Docker
   volume (separate from the Postgres volume), e.g. mounted at `/app/uploads` in the backend
-  container. The backend serves that directory as static files (e.g. under `/media/...`), and
-  the frontend editor embeds the returned URL directly into the entry's markdown content. No
-  database table tracks uploads — the file on disk plus its reference inside an entry's markdown
-  `content` is the only record, consistent with v0.1.0 being kept minimal.
+  container, under a per-user subdirectory (`uploads/{user_id}/...`). Unlike a bare static-file
+  mount, `GET /media/{user_id}/{filename}` is a regular authenticated endpoint: it requires a
+  valid session and returns 404 (not 403) if the session's user doesn't match `{user_id}`, so both
+  upload creation and every subsequent read are access-controlled. The frontend editor embeds the
+  returned URL directly into the entry's markdown content. No database table tracks uploads — the
+  file on disk plus its reference inside an entry's markdown `content` is the only record,
+  consistent with v0.1.0 being kept minimal.
 
 - **Testing**:
   - Unit tests for business logic
@@ -84,16 +109,35 @@ All three components run as separate Docker containers, orchestrated locally via
 
 ## Data model
 
+`users` table:
+
+| Column            | Type              | Notes                                   |
+|-------------------|-------------------|--------------------------------------------|
+| `id`              | uuid, PK          |                                             |
+| `email`           | text              | unique, not null                           |
+| `hashed_password` | text              | not null, never exposed via API            |
+| `created_at`      | timestamptz       | system-set on creation                     |
+
 `diary_entries` table:
 
 | Column       | Type                  | Notes                                   |
 |--------------|-----------------------|------------------------------------------|
 | `id`         | uuid / serial, PK      |                                          |
+| `user_id`    | uuid, FK → `users.id`  | not null, indexed, cascade-deletes with the user |
 | `title`      | text                   |                                          |
 | `content`    | text                   | markdown                                 |
 | `entry_date` | date                   | user-selectable, defaults to today       |
 | `created_at` | timestamptz            | system-set on creation                   |
 | `updated_at` | timestamptz            | system-set on every update               |
+
+`sessions` table:
+
+| Column       | Type                  | Notes                                    |
+|--------------|-----------------------|---------------------------------------------|
+| `id`         | text, PK              | opaque random token, stored in the session cookie |
+| `user_id`    | uuid, FK → `users.id`  | not null, indexed, cascade-deletes with the user |
+| `created_at` | timestamptz            | system-set on creation                      |
+| `expires_at` | timestamptz            | session expiry; checked on every request     |
 
 ## Containerization
 

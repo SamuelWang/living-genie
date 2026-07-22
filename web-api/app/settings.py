@@ -9,6 +9,10 @@ class Settings(BaseSettings):
 
     database_url: str
     uploads_dir: Path = Path("uploads")
+    session_cookie_name: str = "session_id"
+    session_expire_minutes: int = 10080
+    cookie_secure: bool = False
+    frontend_origin: str = "http://localhost:5173"
 
 
 @lru_cache

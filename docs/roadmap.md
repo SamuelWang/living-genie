@@ -3,6 +3,8 @@
 ## v0.1.0
 
 - Initialize the frontend and backend infrastructure.
+- Complete the user registration function with email and password.
+- Complete the user login function.
 - Complete the creation, edit, update, and delete functions of diaries.
 
 ## v0.2.0

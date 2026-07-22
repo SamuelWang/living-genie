@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class DiaryEntryCreate(BaseModel):
@@ -37,3 +37,21 @@ class DiaryEntrySummary(BaseModel):
 
 class UploadResponse(BaseModel):
     url: str
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+
+
+class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: EmailStr
+    created_at: datetime
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str

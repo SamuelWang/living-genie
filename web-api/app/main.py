@@ -1,8 +1,10 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import diaries, uploads
+from app.routers import auth, diaries, uploads
 from app.settings import get_settings
+
+_settings = get_settings()
 
 app = FastAPI(
     title="Living Genie API",
@@ -10,9 +12,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
-_uploads_dir = get_settings().uploads_dir
-_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[_settings.frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+_settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+
+app.include_router(auth.router)
 app.include_router(diaries.router)
 app.include_router(uploads.router)
-app.mount("/media", StaticFiles(directory=_uploads_dir), name="media")
+app.include_router(uploads.media_router)
