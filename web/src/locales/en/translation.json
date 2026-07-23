@@ -1,0 +1,11 @@
+{
+  "app": { "name": "Living Genie" },
+  "auth": { "loginTitle": "Login", "registerTitle": "Register" },
+  "diary": {
+    "listTitle": "Diary Entries",
+    "createTitle": "New Diary Entry",
+    "detailTitle": "Diary Entry",
+    "editTitle": "Edit Diary Entry"
+  },
+  "common": { "loading": "Loading…", "notFound": "Page not found" }
+}

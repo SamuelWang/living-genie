@@ -1,0 +1,11 @@
+{
+  "app": { "name": "Living Genie" },
+  "auth": { "loginTitle": "登入", "registerTitle": "註冊" },
+  "diary": {
+    "listTitle": "日記列表",
+    "createTitle": "新增日記",
+    "detailTitle": "日記內容",
+    "editTitle": "編輯日記"
+  },
+  "common": { "loading": "載入中…", "notFound": "找不到頁面" }
+}
