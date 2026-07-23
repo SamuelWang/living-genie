@@ -36,6 +36,12 @@ All three components run as separate Docker containers, orchestrated locally via
 - **Data fetching**: REST calls to the FastAPI backend via a typed API client, using
   [TanStack Query](https://tanstack.com/query) for data fetching, caching, and mutations
   (diary CRUD, image uploads) — response shapes match the backend's Pydantic schemas.
+- **i18n**: [react-i18next](https://react.i18next.com/) with `i18next-browser-languagedetector`
+  for first-visit browser-locale detection. Supported locales: `zh-Hant` (default/fallback) and
+  `en`. Translation strings live under `web/src/locales/{lng}/translation.json`, loaded eagerly
+  (small string set at this scale). The detected/selected locale is persisted to `localStorage`
+  only — no backend involvement, since the preference isn't synced to the account in v0.1.0. A
+  language-switcher component (e.g. in the nav) lets the user override the language at any time.
 - **Testing**:
   - Vitest + React Testing Library for unit/component tests
   - Playwright for integration/e2e tests of key flows (diary CRUD end-to-end through the UI)
@@ -162,6 +168,6 @@ is initialized.
 
 ## Future considerations
 
-- **v0.2.0**: adds an Ollama-backed inference service and a RAG/chunking pipeline over diary
-  content. This will extend the architecture above (new service, new data flows for
-  chunking/embeddings/retrieval) rather than replace it.
+- **v0.2.0**: adds an Ollama-backed inference service, a vector database for storing embedding
+  vectors, and a RAG/chunking pipeline over diary content. This will extend the architecture above
+  (new service, new data flows for chunking/embeddings/retrieval) rather than replace it.
