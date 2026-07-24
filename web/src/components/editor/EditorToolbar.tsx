@@ -1,6 +1,8 @@
 import type { Editor } from '@tiptap/core';
 import { useEditorState } from '@tiptap/react';
 import type { ReactNode } from 'react';
+import { useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlignCenter,
   AlignJustify,
@@ -31,6 +33,8 @@ import { Button } from '@/components/ui/button';
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  onInsertImage?: (file: File) => void;
+  isUploadingImage?: boolean;
 }
 
 function ToolbarButton({
@@ -61,14 +65,14 @@ function ToolbarButton({
 }
 
 const FONT_FAMILIES = [
-  { label: 'Default', value: '' },
-  { label: 'Sans', value: 'ui-sans-serif, system-ui, sans-serif' },
-  { label: 'Serif', value: 'ui-serif, Georgia, serif' },
-  { label: 'Mono', value: 'ui-monospace, SFMono-Regular, monospace' },
+  { labelKey: 'editor.toolbar.optionDefault', value: '' },
+  { labelKey: 'editor.toolbar.fontSans', value: 'ui-sans-serif, system-ui, sans-serif' },
+  { labelKey: 'editor.toolbar.fontSerif', value: 'ui-serif, Georgia, serif' },
+  { labelKey: 'editor.toolbar.fontMono', value: 'ui-monospace, SFMono-Regular, monospace' },
 ];
 
 const FONT_SIZES = [
-  { label: 'Default', value: '' },
+  { label: null, value: '' },
   { label: '12', value: '12px' },
   { label: '14', value: '14px' },
   { label: '16', value: '16px' },
@@ -77,7 +81,9 @@ const FONT_SIZES = [
   { label: '32', value: '32px' },
 ];
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
+export function EditorToolbar({ editor, onInsertImage, isUploadingImage }: EditorToolbarProps) {
+  const { t } = useTranslation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // `editor.isActive(...)` reads live state but doesn't itself trigger a re-render — Tiptap's
   // `onUpdate` (which is what re-renders this component, via the parent's onChange) only fires
   // on content changes, not on cursor/selection moves. useEditorState subscribes to every
@@ -120,21 +126,21 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
   return (
     <div className="border-border bg-muted/40 flex flex-wrap items-center gap-1 border-b p-1">
       <ToolbarButton
-        title="Heading 1"
+        title={t('editor.toolbar.heading1')}
         active={state.heading1}
         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
       >
         <Heading1 />
       </ToolbarButton>
       <ToolbarButton
-        title="Heading 2"
+        title={t('editor.toolbar.heading2')}
         active={state.heading2}
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
       >
         <Heading2 />
       </ToolbarButton>
       <ToolbarButton
-        title="Heading 3"
+        title={t('editor.toolbar.heading3')}
         active={state.heading3}
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
       >
@@ -144,35 +150,35 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
       <div className="bg-border mx-1 h-5 w-px" />
 
       <ToolbarButton
-        title="Bold"
+        title={t('editor.toolbar.bold')}
         active={state.bold}
         onClick={() => editor.chain().focus().toggleBold().run()}
       >
         <Bold />
       </ToolbarButton>
       <ToolbarButton
-        title="Italic"
+        title={t('editor.toolbar.italic')}
         active={state.italic}
         onClick={() => editor.chain().focus().toggleItalic().run()}
       >
         <Italic />
       </ToolbarButton>
       <ToolbarButton
-        title="Strikethrough"
+        title={t('editor.toolbar.strikethrough')}
         active={state.strike}
         onClick={() => editor.chain().focus().toggleStrike().run()}
       >
         <Strikethrough />
       </ToolbarButton>
       <ToolbarButton
-        title="Inline code"
+        title={t('editor.toolbar.inlineCode')}
         active={state.code}
         onClick={() => editor.chain().focus().toggleCode().run()}
       >
         <Code />
       </ToolbarButton>
       <ToolbarButton
-        title="Link"
+        title={t('editor.toolbar.link')}
         active={state.link}
         onClick={() => {
           if (state.link) {
@@ -189,42 +195,42 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
       <div className="bg-border mx-1 h-5 w-px" />
 
       <ToolbarButton
-        title="Bullet list"
+        title={t('editor.toolbar.bulletList')}
         active={state.bulletList}
         onClick={() => editor.chain().focus().toggleBulletList().run()}
       >
         <List />
       </ToolbarButton>
       <ToolbarButton
-        title="Ordered list"
+        title={t('editor.toolbar.orderedList')}
         active={state.orderedList}
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
       >
         <ListOrdered />
       </ToolbarButton>
       <ToolbarButton
-        title="Task list"
+        title={t('editor.toolbar.taskList')}
         active={state.taskList}
         onClick={() => editor.chain().focus().toggleTaskList().run()}
       >
         <ListTodo />
       </ToolbarButton>
       <ToolbarButton
-        title="Blockquote"
+        title={t('editor.toolbar.blockquote')}
         active={state.blockquote}
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
       >
         <Quote />
       </ToolbarButton>
       <ToolbarButton
-        title="Code block"
+        title={t('editor.toolbar.codeBlock')}
         active={state.codeBlock}
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
       >
         <Code2 />
       </ToolbarButton>
       <ToolbarButton
-        title="Horizontal rule"
+        title={t('editor.toolbar.horizontalRule')}
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
       >
         <Minus />
@@ -233,28 +239,28 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
       <div className="bg-border mx-1 h-5 w-px" />
 
       <ToolbarButton
-        title="Align left"
+        title={t('editor.toolbar.alignLeft')}
         active={state.alignLeft}
         onClick={() => editor.chain().focus().setTextAlign('left').run()}
       >
         <AlignLeft />
       </ToolbarButton>
       <ToolbarButton
-        title="Align center"
+        title={t('editor.toolbar.alignCenter')}
         active={state.alignCenter}
         onClick={() => editor.chain().focus().setTextAlign('center').run()}
       >
         <AlignCenter />
       </ToolbarButton>
       <ToolbarButton
-        title="Align right"
+        title={t('editor.toolbar.alignRight')}
         active={state.alignRight}
         onClick={() => editor.chain().focus().setTextAlign('right').run()}
       >
         <AlignRight />
       </ToolbarButton>
       <ToolbarButton
-        title="Justify"
+        title={t('editor.toolbar.justify')}
         active={state.alignJustify}
         onClick={() => editor.chain().focus().setTextAlign('justify').run()}
       >
@@ -265,7 +271,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
 
       <input
         type="color"
-        title="Text color"
+        title={t('editor.toolbar.textColor')}
         className="border-border h-7 w-7 cursor-pointer rounded border p-0.5"
         // Native color inputs can't represent "no color set" the way the font-family/size
         // <select>s show a "Default" option — black is the fallback swatch shown at the cursor
@@ -274,7 +280,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
         onChange={(e) => editor.chain().focus().setColor(e.target.value).run()}
       />
       <select
-        title="Font family"
+        title={t('editor.toolbar.fontFamily')}
         className="border-border bg-background h-7 rounded border px-1 text-xs"
         value={state.fontFamily}
         onChange={(e) => {
@@ -283,13 +289,13 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
         }}
       >
         {FONT_FAMILIES.map((f) => (
-          <option key={f.label} value={f.value}>
-            {f.label}
+          <option key={f.labelKey} value={f.value}>
+            {t(f.labelKey)}
           </option>
         ))}
       </select>
       <select
-        title="Font size"
+        title={t('editor.toolbar.fontSize')}
         className="border-border bg-background h-7 rounded border px-1 text-xs"
         value={state.fontSize}
         onChange={(e) => {
@@ -298,25 +304,34 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
         }}
       >
         {FONT_SIZES.map((f) => (
-          <option key={f.label} value={f.value}>
-            {f.label}
+          <option key={f.value} value={f.value}>
+            {f.label ?? t('editor.toolbar.optionDefault')}
           </option>
         ))}
       </select>
 
       <div className="bg-border mx-1 h-5 w-px" />
 
-      <ToolbarButton
-        title="Insert image"
-        onClick={() => {
-          const src = window.prompt('Image URL');
-          if (src) editor.chain().focus().setImage({ src }).run();
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) onInsertImage?.(file);
         }}
+      />
+      <ToolbarButton
+        title={t('editor.toolbar.insertImage')}
+        disabled={isUploadingImage}
+        onClick={() => fileInputRef.current?.click()}
       >
         <ImageIcon />
       </ToolbarButton>
       <ToolbarButton
-        title="Insert table"
+        title={t('editor.toolbar.insertTable')}
         onClick={() =>
           editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
         }
@@ -333,7 +348,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             size="xs"
             onClick={() => editor.chain().focus().addRowBefore().run()}
           >
-            +Row above
+            {t('editor.toolbar.addRowAbove')}
           </Button>
           <Button
             type="button"
@@ -341,7 +356,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             size="xs"
             onClick={() => editor.chain().focus().addRowAfter().run()}
           >
-            +Row below
+            {t('editor.toolbar.addRowBelow')}
           </Button>
           <Button
             type="button"
@@ -349,7 +364,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             size="xs"
             onClick={() => editor.chain().focus().deleteRow().run()}
           >
-            -Row
+            {t('editor.toolbar.deleteRow')}
           </Button>
           <Button
             type="button"
@@ -357,7 +372,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             size="xs"
             onClick={() => editor.chain().focus().addColumnBefore().run()}
           >
-            +Col before
+            {t('editor.toolbar.addColumnBefore')}
           </Button>
           <Button
             type="button"
@@ -365,7 +380,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             size="xs"
             onClick={() => editor.chain().focus().addColumnAfter().run()}
           >
-            +Col after
+            {t('editor.toolbar.addColumnAfter')}
           </Button>
           <Button
             type="button"
@@ -373,9 +388,12 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
             size="xs"
             onClick={() => editor.chain().focus().deleteColumn().run()}
           >
-            -Col
+            {t('editor.toolbar.deleteColumn')}
           </Button>
-          <ToolbarButton title="Delete table" onClick={() => editor.chain().focus().deleteTable().run()}>
+          <ToolbarButton
+            title={t('editor.toolbar.deleteTable')}
+            onClick={() => editor.chain().focus().deleteTable().run()}
+          >
             <Trash2 />
           </ToolbarButton>
         </>
@@ -383,14 +401,14 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
 
       <div className="ml-auto flex items-center gap-1">
         <ToolbarButton
-          title="Undo"
+          title={t('editor.toolbar.undo')}
           disabled={!state.canUndo}
           onClick={() => editor.chain().focus().undo().run()}
         >
           <Undo2 />
         </ToolbarButton>
         <ToolbarButton
-          title="Redo"
+          title={t('editor.toolbar.redo')}
           disabled={!state.canRedo}
           onClick={() => editor.chain().focus().redo().run()}
         >

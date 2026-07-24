@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getMe } from '@/api/auth';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getMe, login as apiLogin, logout as apiLogout } from '@/api/auth';
 import { AuthContext } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: getMe,
@@ -11,9 +12,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
-  return (
-    <AuthContext.Provider value={{ user: data ?? null, isLoading, refetchUser: () => void refetch() }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = {
+    user: data ?? null,
+    isLoading,
+    refetchUser: () => void refetch(),
+    login: async (payload: Parameters<typeof apiLogin>[0]) => {
+      const user = await apiLogin(payload);
+      queryClient.setQueryData(['auth', 'me'], user);
+      return user;
+    },
+    logout: async () => {
+      await apiLogout();
+      queryClient.setQueryData(['auth', 'me'], null);
+    },
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
