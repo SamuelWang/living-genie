@@ -1,6 +1,6 @@
 {
   "app": { "name": "Living Genie" },
-  "nav": { "logout": "登出" },
+  "nav": { "logout": "登出", "diaries": "日記" },
   "auth": {
     "loginTitle": "登入",
     "registerTitle": "註冊",

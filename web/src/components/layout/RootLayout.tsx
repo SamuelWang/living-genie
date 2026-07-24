@@ -3,7 +3,7 @@ import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslation } from 'react-i18next';
-import { Outlet, useNavigate } from 'react-router';
+import { Link, Outlet, useNavigate } from 'react-router';
 
 export function RootLayout() {
   const { t } = useTranslation();
@@ -24,7 +24,16 @@ export function RootLayout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="flex items-center justify-between border-b p-4">
-        <span className="font-semibold">{t('app.name')}</span>
+        <div className="flex items-center gap-6">
+          <span className="font-semibold">{t('app.name')}</span>
+          {user && (
+            <nav>
+              <Link to="/diaries" className="text-sm font-medium hover:underline">
+                {t('nav.diaries')}
+              </Link>
+            </nav>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
           {user && (
