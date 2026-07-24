@@ -7,5 +7,6 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "ignorePatterns": ["**/*.test.ts", "**/*.test.tsx", "e2e/**"]
 }

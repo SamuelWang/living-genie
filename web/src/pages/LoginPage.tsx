@@ -47,7 +47,7 @@ export function LoginPage() {
   return (
     <div className='mx-auto flex max-w-sm flex-col gap-4'>
       <h1 className='text-2xl font-semibold'>{t('auth.loginTitle')}</h1>
-      <form className='flex flex-col gap-4' onSubmit={handleSubmit}>
+      <form className='flex flex-col gap-4' noValidate onSubmit={handleSubmit}>
         <div className='flex flex-col gap-1.5'>
           <Label htmlFor='login-email'>{t('auth.emailLabel')}</Label>
           <Input

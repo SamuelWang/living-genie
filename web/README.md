@@ -1,32 +1,89 @@
-# React + TypeScript + Vite
+# Living Genie Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Frontend for [Living Genie](../README.md), a personal diary app. React + TypeScript + Vite,
+providing registration/login, diary entry CRUD, and a rich-text editor with image uploads against
+the `web-api` backend. See [../docs/architecture.md](../docs/architecture.md) and
+[../docs/requirements/v0.1.0.md](../docs/requirements/v0.1.0.md) for the full design and
+acceptance criteria this app implements.
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 20+ and [pnpm](https://pnpm.io/)
+- A running `web-api` backend (see [../web-api/README.md](../web-api/README.md)) for the app to
+  talk to in dev
+- For end-to-end tests only: [uv](https://docs.astral.sh/uv/) and Docker (to run PostgreSQL
+  locally) — see [Running tests](#running-tests) below
 
-## React Compiler
+## Running locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+pnpm install
+cp .env.example .env   # adjust VITE_API_URL if web-api isn't on localhost:8000
+pnpm dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The app is served at `http://localhost:5173`, matching `web-api`'s default `FRONTEND_ORIGIN`.
+
+**Note:** no `Dockerfile`/compose service for this app exists yet — containerization is tracked
+under Task 10 in [../docs/execution/v0.1.0.md](../docs/execution/v0.1.0.md).
+
+## Configuration
+
+All settings are read from Vite env vars, with `.env.example` as the source of truth for local
+defaults:
+
+| Variable       | Default                 | Description                     |
+| -------------- | ------------------------ | -------------------------------- |
+| `VITE_API_URL` | `http://localhost:8000` | Base URL of the `web-api` backend |
+
+## Running tests
+
+### Unit / component tests (Vitest + React Testing Library)
+
+```sh
+pnpm test         # single run
+pnpm test:watch   # watch mode
+```
+
+Component tests mock the `@/api/*` modules directly rather than the network layer, and stub the
+tiptap-based `DiaryEditor` wherever it's only a descendant of the component under test (see
+`src/test/setup.ts` and `src/test/render.tsx`).
+
+### End-to-end tests (Playwright)
+
+```sh
+pnpm exec playwright install   # first time only, installs browser binaries
+pnpm test:e2e
+```
+
+Unlike the unit tests, e2e specs run against a **real** `web-api` instance and a real PostgreSQL
+database rather than mocked responses, to get genuine integration coverage of the flows in
+`docs/execution/v0.1.0.md`'s Section 9 (auth, diary CRUD, image upload). `pnpm test:e2e`:
+
+1. Runs `web-api/scripts/init_e2e_db.py` (via Playwright's `globalSetup`) to create/migrate a
+   dedicated `living_genie_e2e` database on the same Postgres instance used for local dev — your
+   dev database is never touched. Override the target with `E2E_DATABASE_URL`.
+2. Builds the frontend and serves it with `vite preview` on port 4173.
+3. Starts `web-api` (`uv run uvicorn`) on port 8000, pointed at the `living_genie_e2e` database.
+4. Runs the specs under `e2e/` against that stack in a real Chromium browser.
+
+Requires Postgres reachable at `localhost:5432` (`docker compose up -d postgres` from the repo
+root) and `uv` installed.
+
+## Project layout
+
+```
+web/
+├── src/
+│   ├── api/           # Typed fetch wrapper functions + TS types mirroring backend schemas
+│   ├── components/    # Shared UI (shadcn/ui primitives, diary, editor, layout)
+│   ├── context/       # Auth context/provider
+│   ├── hooks/         # useAuth, useImageUpload
+│   ├── i18n/          # i18next configuration
+│   ├── lib/           # Small framework-agnostic helpers (dates, class names)
+│   ├── locales/       # zh-Hant (default) and en translation resources
+│   ├── pages/         # Route-level components
+│   ├── routes/        # Router setup + protected-route wrapper
+│   └── test/          # Vitest setup + renderWithProviders test helper
+└── e2e/               # Playwright specs, fixtures, and global setup
+```

@@ -48,7 +48,7 @@ export function DiaryEntryForm({
   };
 
   return (
-    <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+    <form className="flex flex-col gap-4" noValidate onSubmit={handleSubmit}>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="diary-title">{t('diary.titleLabel')}</Label>
         <Input

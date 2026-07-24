@@ -13,8 +13,15 @@ web-api/.venv/
 # Uploaded files (local dev; backed by a Docker volume in deployed environments)
 web-api/uploads/
 web-api/tests/.uploads-test/
+web-api/uploads-e2e/
 
 # Node (web/ ships its own .gitignore for node_modules/dist, but cover it at the root too)
 node_modules/
 web/dist/
 web/build/
+
+# Playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/playwright/.cache/
