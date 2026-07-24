@@ -30,7 +30,7 @@ All three components run as separate Docker containers, orchestrated locally via
 - **Editor**: [Tiptap](https://tiptap.dev/), configured with StarterKit (headings, lists incl.
   task lists, blockquote, code blocks, links) plus GFM tables/strikethrough, a text-style/color
   extension for rich formatting, and an image extension for inline images. Content is serialized
-  to/from markdown via `tiptap-markdown`; formatting with no markdown equivalent (e.g. text
+  to/from markdown via `@tiptap/markdown`; formatting with no markdown equivalent (e.g. text
   color) is represented as inline HTML within the stored markdown — still valid CommonMark,
   since raw HTML is permitted inline.
 - **Data fetching**: REST calls to the FastAPI backend via a typed API client, using

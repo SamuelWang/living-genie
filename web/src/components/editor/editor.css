@@ -1,0 +1,87 @@
+@reference "../../index.css";
+
+.tiptap {
+  @apply min-h-40 p-3 text-sm outline-none;
+}
+
+.tiptap p {
+  @apply my-2;
+}
+
+.tiptap h1 {
+  @apply mt-4 mb-2 text-2xl font-bold;
+}
+
+.tiptap h2 {
+  @apply mt-4 mb-2 text-xl font-bold;
+}
+
+.tiptap h3 {
+  @apply mt-3 mb-2 text-lg font-semibold;
+}
+
+.tiptap ul,
+.tiptap ol {
+  @apply my-2 pl-6;
+}
+
+.tiptap ul {
+  @apply list-disc;
+}
+
+.tiptap ol {
+  @apply list-decimal;
+}
+
+.tiptap ul[data-type='taskList'] {
+  @apply list-none pl-1;
+}
+
+.tiptap ul[data-type='taskList'] li {
+  @apply flex items-start gap-2;
+}
+
+.tiptap ul[data-type='taskList'] li > label {
+  @apply mt-1;
+}
+
+.tiptap blockquote {
+  @apply border-border text-muted-foreground my-2 border-l-2 pl-3 italic;
+}
+
+.tiptap pre {
+  @apply bg-muted my-2 overflow-x-auto rounded-md p-3 text-xs;
+}
+
+.tiptap code {
+  @apply bg-muted rounded px-1 py-0.5 text-xs;
+}
+
+.tiptap pre code {
+  @apply bg-transparent p-0;
+}
+
+.tiptap hr {
+  @apply border-border my-4;
+}
+
+.tiptap a {
+  @apply text-primary underline underline-offset-2;
+}
+
+.tiptap img {
+  @apply my-2 max-w-full rounded-md;
+}
+
+.tiptap table {
+  @apply my-2 w-full border-collapse;
+}
+
+.tiptap th,
+.tiptap td {
+  @apply border-border border px-2 py-1 text-left align-top;
+}
+
+.tiptap th {
+  @apply bg-muted font-semibold;
+}
