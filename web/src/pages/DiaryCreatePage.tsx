@@ -30,6 +30,7 @@ export function DiaryCreatePage() {
         submitting={createMutation.isPending}
         errorMessage={createMutation.isError ? t('common.genericError') : null}
         onSubmit={handleSubmit}
+        onCancel={() => void navigate('/diaries')}
       />
     </div>
   );

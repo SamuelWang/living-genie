@@ -57,6 +57,9 @@ export function DiaryDetailPage() {
       <DiaryEditor key={entry.id} content={entry.content} onChange={() => {}} editable={false} />
 
       <div className="flex items-center gap-2">
+        <Button variant="outline" render={<Link to="/diaries" />} nativeButton={false}>
+          {t('diary.detailBackToList')}
+        </Button>
         <Button
           variant="outline"
           render={<Link to={`/diaries/${entry.id}/edit`} />}

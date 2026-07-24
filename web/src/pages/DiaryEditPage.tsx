@@ -61,6 +61,7 @@ export function DiaryEditPage() {
         submitting={updateMutation.isPending}
         errorMessage={updateMutation.isError ? t('common.genericError') : null}
         onSubmit={(values) => updateMutation.mutate(values)}
+        onCancel={() => void navigate(`/diaries/${id}`)}
       />
     </div>
   );

@@ -19,6 +19,7 @@ interface DiaryEntryFormProps {
   submitting: boolean;
   errorMessage?: string | null;
   onSubmit: (values: DiaryEntryFormValues) => void;
+  onCancel?: () => void;
 }
 
 export function DiaryEntryForm({
@@ -27,6 +28,7 @@ export function DiaryEntryForm({
   submitting,
   errorMessage,
   onSubmit,
+  onCancel,
 }: DiaryEntryFormProps) {
   const { t } = useTranslation();
   const [title, setTitle] = useState(initialValues?.title ?? '');
@@ -90,10 +92,15 @@ export function DiaryEntryForm({
         </p>
       )}
 
-      <div>
+      <div className="flex gap-2">
         <Button type="submit" disabled={submitting}>
           {t(submitLabel)}
         </Button>
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            {t('common.cancel')}
+          </Button>
+        )}
       </div>
     </form>
   );
