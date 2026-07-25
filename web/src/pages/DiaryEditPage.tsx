@@ -25,7 +25,8 @@ export function DiaryEditPage() {
 
   const updateMutation = useMutation({
     mutationFn: (values: DiaryEntryFormValues) => updateDiaryEntry(id!, values),
-    onSuccess: () => {
+    onSuccess: (updatedEntry) => {
+      queryClient.setQueryData(['diaries', id], updatedEntry);
       void queryClient.invalidateQueries({ queryKey: ['diaries'] });
       void navigate(`/diaries/${id}`);
     },

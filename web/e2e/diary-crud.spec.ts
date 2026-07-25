@@ -18,9 +18,14 @@ test('full CRUD flow through the UI: create → list → view → edit → delet
 
   await page.getByRole('button', { name: 'Edit' }).click();
   await page.getByLabel('Title').fill('My e2e entry (edited)');
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('Updated diary body text.');
   await page.getByRole('button', { name: 'Save changes' }).click();
 
   await expect(page.getByRole('heading', { name: 'My e2e entry (edited)' })).toBeVisible();
+  await expect(
+    page.locator('.ProseMirror', { hasText: 'Updated diary body text.' }),
+  ).toBeVisible();
 
   await page.getByRole('button', { name: 'Delete' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
