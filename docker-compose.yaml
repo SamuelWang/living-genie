@@ -41,7 +41,8 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - web-api
+      web-api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

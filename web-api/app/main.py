@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.routers import auth, diaries, uploads
 from app.settings import get_settings
 
@@ -26,3 +29,9 @@ app.include_router(auth.router)
 app.include_router(diaries.router)
 app.include_router(uploads.router)
 app.include_router(uploads.media_router)
+
+
+@app.get("/health")
+def health(db: Session = Depends(get_db)) -> dict[str, str]:
+    db.execute(text("SELECT 1"))
+    return {"status": "ok"}
