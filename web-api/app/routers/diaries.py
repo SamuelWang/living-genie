@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.media import delete_media_files, extract_media_filenames
 from app.models import DiaryEntry, User
 from app.schemas import DiaryEntryCreate, DiaryEntryRead, DiaryEntrySummary, DiaryEntryUpdate
 from app.security import get_current_user
@@ -69,10 +70,17 @@ def update_diary_entry(
     current_user: User = Depends(get_current_user),
 ) -> DiaryEntry:
     entry = _get_entry_or_404(db, entry_id, current_user.id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    payload_fields = payload.model_dump(exclude_unset=True)
+    old_filenames = extract_media_filenames(entry.content, current_user.id)
+    for field, value in payload_fields.items():
         setattr(entry, field, value)
     db.commit()
     db.refresh(entry)
+
+    if "content" in payload_fields:
+        new_filenames = extract_media_filenames(entry.content, current_user.id)
+        delete_media_files(old_filenames - new_filenames, current_user.id)
+
     return entry
 
 
@@ -83,5 +91,7 @@ def delete_diary_entry(
     current_user: User = Depends(get_current_user),
 ) -> None:
     entry = _get_entry_or_404(db, entry_id, current_user.id)
+    filenames = extract_media_filenames(entry.content, current_user.id)
     db.delete(entry)
     db.commit()
+    delete_media_files(filenames, current_user.id)
