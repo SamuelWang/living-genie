@@ -31,9 +31,34 @@ uv run uvicorn app.main:app --reload
 
 The API is served at `http://localhost:8000`; interactive docs at `http://localhost:8000/docs`.
 
-**Note:** only PostgreSQL is containerized today (see the root `docker-compose.yml`). A
-`Dockerfile` for this service, plus adding `web`/`web-api` to compose, is tracked separately under
-Task 10 (Containerization) in [../docs/execution/v0.1.0.md](../docs/execution/v0.1.0.md).
+### Running via Docker
+
+From the repo root:
+
+```sh
+cp web-api/.env.example web-api/.env   # adjust values as needed
+docker compose up --build web-api
+```
+
+Migrations run automatically on container start (`alembic upgrade head`, before `uvicorn`).
+Uploaded images persist across restarts via the `uploads_data` named volume, mounted at
+`/app/uploads`.
+
+The image applies OS security patches (`apt-get upgrade`) at build time, but that layer is cached
+like any other — rebuild periodically with `docker compose build --no-cache --pull web-api` to
+actually pick up new upstream patches rather than reusing a stale cached layer.
+
+### Development via Docker Compose (hot reload)
+
+`docker-compose.dev.yaml` overrides `web-api` to run `uvicorn --reload` against the source
+bind-mounted from the host, so edits take effect immediately without an image rebuild:
+
+```sh
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build web-api
+```
+
+Dependencies (`.venv`) are installed at image-build time and cached in a named volume — if you
+change `pyproject.toml`/`uv.lock`, re-run the command above with `--build` to pick up the change.
 
 ## Configuration
 

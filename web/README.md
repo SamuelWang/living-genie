@@ -24,8 +24,34 @@ pnpm dev
 
 The app is served at `http://localhost:5173`, matching `web-api`'s default `FRONTEND_ORIGIN`.
 
-**Note:** no `Dockerfile`/compose service for this app exists yet — containerization is tracked
-under Task 10 in [../docs/execution/v0.1.0.md](../docs/execution/v0.1.0.md).
+### Running via Docker
+
+From the repo root:
+
+```sh
+cp web/.env.example web/.env   # adjust VITE_API_URL if web-api isn't on localhost:8000
+docker compose up --build web
+```
+
+`VITE_API_URL` is baked into the static bundle at build time (Vite inlines `import.meta.env.*`),
+so changing it requires rebuilding the image, not just restarting the container.
+
+The image applies OS security patches (`apk upgrade`) at build time, but that layer is cached like
+any other — rebuild periodically with `docker compose build --no-cache --pull web` to actually
+pick up new upstream patches rather than reusing a stale cached layer.
+
+### Development via Docker Compose (hot reload)
+
+`docker-compose.dev.yaml` overrides `web` to run the Vite dev server against the source
+bind-mounted from the host, so edits take effect immediately without an image rebuild:
+
+```sh
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build web
+```
+
+The app is served at `http://localhost:5173` with HMR. Dependencies (`node_modules`) are
+installed at image-build time and cached in a named volume — if you change
+`package.json`/`pnpm-lock.yaml`, re-run the command above with `--build` to pick up the change.
 
 ## Configuration
 

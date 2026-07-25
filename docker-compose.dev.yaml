@@ -1,0 +1,20 @@
+services:
+  web-api:
+    build:
+      target: dev
+    volumes:
+      - ./web-api:/app
+      - web_api_venv:/app/.venv
+
+  web:
+    build:
+      target: dev
+    ports: !override
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+
+volumes:
+  web_api_venv:
+  web_node_modules:
