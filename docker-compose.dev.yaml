@@ -6,6 +6,13 @@ services:
       - ./web-api:/app
       - web_api_venv:/app/.venv
 
+  worker:
+    build:
+      target: dev
+    volumes:
+      - ./web-api:/app
+      - worker_venv:/app/.venv
+
   web:
     build:
       target: dev
@@ -17,4 +24,5 @@ services:
 
 volumes:
   web_api_venv:
+  worker_venv:
   web_node_modules:
