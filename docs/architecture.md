@@ -1,9 +1,9 @@
 # Architecture
 
 This document describes Living Genie's technical architecture. It is stack-level rather than
-phase-specific: it starts with what's needed for [v0.1.0 requirements](requirements/v0.1.0.md)
-and is expected to grow (not be rewritten) as later phases — starting with v0.2.0's RAG/Ollama
-work — are added. See [roadmap.md](roadmap.md) for the phase breakdown.
+phase-specific: it currently covers [v0.1.0](requirements/v0.1.0.md) and
+[v0.2.0](requirements/v0.2.0.md), and is expected to keep growing (not be rewritten) as later
+phases are added. See [roadmap.md](roadmap.md) for the phase breakdown.
 
 ## Overview
 
@@ -11,16 +11,25 @@ work — are added. See [roadmap.md](roadmap.md) for the phase breakdown.
                       REST/JSON                                  SQL
 +------------------+                      +------------------+                  +--------------+
 |  Frontend (SPA)  | -------------------> |  Backend (API)   | ---------------> |  PostgreSQL  |
-|    React + TS    | <------------------- |     FastAPI      | <--------------- |              |
+|    React + TS    | <------------------- |     FastAPI      | <--------------- |  (+ job table)|
 +------------------+                      +------------------+                  +--------------+
-  Docker container                          Docker container                    Docker container
+  Docker container                         Docker container    |    ^            Docker container
+                                    embed query /                |    | poll
+                                    generate reply                v    | embedding_jobs
+                                    +------------+          +------------------+
+                                    |            |<-------- |  Indexing Worker |
+                                    v            v          +------------------+
+                              +----------+  +----------+       |            |
+                              |  Ollama  |  |  Qdrant  |<------+            |
+                              | (LLM +   |  | (vector  |   upsert/delete   embed
+                              | embed)   |  |  store)  |     vectors      chunks
+                              +----------+  +----------+
+                              Docker container  Docker container
 ```
 
-All three components run as separate Docker containers, orchestrated locally via Docker Compose.
-
-> **Future (v0.2.0+):** an **Ollama** service will be added alongside these containers to serve
-> local LLM inference for RAG over diary entries. It is intentionally out of scope for v0.1.0 —
-> not present in the v0.1.0 Compose setup — and will be designed when that phase is scoped.
+All components run as separate Docker containers, orchestrated locally via Docker Compose. Both
+the backend (for synchronous chat queries) and the indexing worker (for background chunking/
+embedding) call Ollama and Qdrant directly — neither proxies through the other.
 
 ## Frontend
 
@@ -92,6 +101,16 @@ All three components run as separate Docker containers, orchestrated locally via
   | PUT    | `/diaries/{id}`  | Update a diary entry                |
   | DELETE | `/diaries/{id}`  | Delete a diary entry                |
 
+  Chat (see [AI / RAG pipeline](#ai--rag-pipeline) below):
+
+  | Method | Path                          | Description                                         |
+  |--------|-------------------------------|------------------------------------------------------|
+  | POST   | `/conversations`              | Create a new conversation                             |
+  | GET    | `/conversations`               | List the user's conversations, most recently active first |
+  | GET    | `/conversations/{id}`          | Get a conversation with its messages                  |
+  | DELETE | `/conversations/{id}`          | Delete a conversation                                  |
+  | POST   | `/conversations/{id}/messages` | Send a message; streams back the RAG-grounded reply    |
+
   Plus one endpoint for image uploads used by the editor:
 
   | Method | Path              | Description                                          |
@@ -112,6 +131,56 @@ All three components run as separate Docker containers, orchestrated locally via
   - Unit tests for business logic
   - Integration tests run against a real/test PostgreSQL instance (e.g. pytest)
   - No fixed coverage target for v0.1.0
+
+## AI / RAG pipeline
+
+- **Local inference**: an `ollama` service serves both embedding and chat generation; model tags
+  are configurable via `OLLAMA_EMBEDDING_MODEL` (default `multilingual-e5-large`) and
+  `OLLAMA_CHAT_MODEL` (default `gemma2:9b`, with `gemma2:2b` as a lighter option for constrained
+  hardware) environment variables. Both are non-China-origin, open-weight models sized to run
+  CPU-only. `multilingual-e5-large` (Microsoft Research) was chosen over the smaller, more common
+  `nomic-embed-text` because it's explicitly multilingual-trained (including Chinese), which
+  matters since diary content is expected to be mostly Traditional Chinese; it's pulled from a
+  community-published GGUF quantization rather than Ollama's official curated library. `gemma2`
+  (Google) was chosen for chat generation for its license permissiveness and reasonable
+  multilingual coverage. Models are pulled on first startup via a one-shot init step (a
+  short-lived service running `ollama pull` against the `ollama` service, exiting once done).
+
+- **Chunking**: on diary entry create/update, `web-api` enqueues a row in `embedding_jobs` with
+  status `pending` rather than embedding inline, keeping the save request fast.
+
+- **Indexing worker**: a dedicated `worker` process (same build as `web-api`, different command)
+  polls `embedding_jobs` for pending rows using `SELECT ... FOR UPDATE SKIP LOCKED` (safe under
+  concurrent polling), splits the entry's markdown `content` into paragraph-aware chunks with
+  overlap, embeds each chunk via Ollama, and upserts the resulting vectors into Qdrant —
+  replacing any prior points for that `diary_entry_id` so edits re-embed cleanly. Job status
+  moves `pending` → `processing` → `completed`/`failed`, with `attempts` and `error_message`
+  columns supporting retry and debugging.
+
+- **Deletion**: `DELETE /diaries/{id}` deletes the entry's Qdrant points synchronously, filtered
+  by `diary_entry_id`. This doesn't need embedding compute, so it doesn't go through the async
+  job table.
+
+- **Vector store**: a single Qdrant collection, `diary_chunks`. Vector size matches the embedding
+  model's dimension (1024 for `multilingual-e5-large`), using Cosine distance. Payload per point:
+  `user_id`, `diary_entry_id`, `chunk_index`, `chunk_text`, `entry_date` — payload-indexed on
+  `user_id` so every search is filtered to the requesting account, mirroring the app-level
+  scoping already used for diary and session data.
+
+- **Chat/RAG request flow** (`POST /conversations/{id}/messages`): embed the user's message via
+  Ollama → similarity search in Qdrant filtered to `user_id`, top-k chunks → build a prompt from
+  the retrieved chunk text plus the conversation's recent turns → call the Ollama chat model,
+  streamed → persist the user message and the assistant reply (storing `cited_diary_entry_ids` on
+  the assistant row) → stream tokens to the frontend via SSE so the UI can show incremental
+  output while generation is in progress.
+
+- **Scope guarding**: the chat system prompt constrains the model to answer only from retrieved
+  diary context or a fixed set of app-help content (Living Genie's features, supported languages,
+  etc.), and to refuse anything else with a fixed rejection message. This is handled at the
+  prompt level rather than with a separate classifier model or pipeline stage, keeping resource
+  usage down and matching the project's minimal-services approach. A lightweight
+  pre-classification step is the natural fallback if prompt-level guarding proves too easy to
+  work around, but isn't needed to start.
 
 ## Data model
 
@@ -145,15 +214,54 @@ All three components run as separate Docker containers, orchestrated locally via
 | `created_at` | timestamptz            | system-set on creation                      |
 | `expires_at` | timestamptz            | session expiry; checked on every request     |
 
+`embedding_jobs` table:
+
+| Column           | Type                       | Notes                                         |
+|------------------|----------------------------|-------------------------------------------------|
+| `id`             | uuid, PK                   |                                                   |
+| `diary_entry_id` | uuid, FK → `diary_entries.id` | not null, indexed, cascade-deletes with the entry |
+| `status`         | text                       | `pending` / `processing` / `completed` / `failed` |
+| `attempts`       | int                        | default `0`, incremented on each processing attempt |
+| `error_message`  | text                       | nullable; set when `status` is `failed`          |
+| `created_at`     | timestamptz                | system-set on creation                           |
+| `updated_at`     | timestamptz                | system-set on every status change                |
+
+`conversations` table:
+
+| Column       | Type                  | Notes                                              |
+|--------------|-----------------------|-------------------------------------------------------|
+| `id`         | uuid, PK               |                                                        |
+| `user_id`    | uuid, FK → `users.id`  | not null, indexed, cascade-deletes with the user       |
+| `created_at` | timestamptz            | system-set on creation                                |
+| `updated_at` | timestamptz            | bumped on each new message; drives conversation-list ordering |
+
+`messages` table:
+
+| Column                  | Type                       | Notes                                        |
+|-------------------------|----------------------------|--------------------------------------------------|
+| `id`                    | uuid, PK                   |                                                    |
+| `conversation_id`       | uuid, FK → `conversations.id` | not null, indexed, cascade-deletes with the conversation |
+| `role`                  | text                       | `user` / `assistant`                              |
+| `content`               | text                       | message body                                      |
+| `cited_diary_entry_ids` | uuid[]                     | nullable; set only on `assistant` rows            |
+| `created_at`            | timestamptz                | system-set on creation                            |
+
 ## Containerization
 
-- Separate `Dockerfile` for the frontend and for the backend.
-- A root-level `docker-compose.yml` wires together: `web`, `web-api`, and `postgres`
-  (with a named volume so diary data persists across restarts), plus a second named volume for
-  the backend's uploaded-images directory.
+- Separate `Dockerfile` for the frontend and for the backend; the `worker` service reuses the
+  backend's build/image with a different command.
+- A root-level `docker-compose.yml` wires together: `web`, `web-api`, `postgres` (with a named
+  volume so diary data persists across restarts), a second named volume for the backend's
+  uploaded-images directory, `ollama` (named volume `ollama_data:/root/.ollama` for pulled
+  models), a one-shot `ollama-init` service that runs `ollama pull` for the configured embedding
+  and chat models against the `ollama` service and exits once done, `qdrant` (named volume
+  `qdrant_data:/qdrant/storage`), and `worker` (no exposed port; depends on `postgres`, `qdrant`,
+  and `ollama` all being healthy).
 - Configuration via environment variables, e.g. `DATABASE_URL` for the backend's Postgres
-  connection. Each service owns its own `.env`/`.env.example` (e.g. `web-api/.env.example`)
-  rather than a single shared root file; Compose wires each in per-service via `env_file:`.
+  connection, plus `QDRANT_URL`, `OLLAMA_URL`, `OLLAMA_EMBEDDING_MODEL`, and `OLLAMA_CHAT_MODEL`
+  for `web-api`/`worker`. Each service owns its own `.env`/`.env.example` (e.g.
+  `web-api/.env.example`) rather than a single shared root file; Compose wires each in per-service
+  via `env_file:`.
 
 ## Repository layout (proposed)
 
@@ -168,6 +276,9 @@ is initialized.
 
 ## Future considerations
 
-- **v0.2.0**: adds an Ollama-backed inference service, a vector database for storing embedding
-  vectors, and a RAG/chunking pipeline over diary content. This will extend the architecture above
-  (new service, new data flows for chunking/embeddings/retrieval) rather than replace it.
+- **Future data sources**: the roadmap describes the chatbot as covering "diaries and future data
+  sources." v0.2.0 only wires up diary entries, and its naming is intentionally diary-specific
+  (`diary_entry_id`, `diary_chunks`) rather than generic (`source_type`/`source_id`) — a
+  deliberate choice to avoid designing for a hypothetical second source before one is real.
+  Generalizing this naming is expected work once a second data source is actually scoped, not an
+  oversight.
