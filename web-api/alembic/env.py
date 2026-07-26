@@ -6,7 +6,14 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.db import Base
-from app.models import DiaryEntry, User, UserSession  # noqa: F401  (registers the models on Base.metadata)
+from app.models import (  # noqa: F401  (registers the models on Base.metadata)
+    Conversation,
+    DiaryEntry,
+    EmbeddingJob,
+    Message,
+    User,
+    UserSession,
+)
 from app.settings import get_settings
 
 # this is the Alembic Config object, which provides

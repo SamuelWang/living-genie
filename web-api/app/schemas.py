@@ -55,3 +55,38 @@ class UserRead(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+class CitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    diary_entry_id: uuid.UUID
+    title: str | None
+    entry_date: date | None
+
+
+class MessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    role: str
+    content: str
+    created_at: datetime
+    citations: list[CitationRead]
+
+
+class ConversationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+    preview: str | None
+
+
+class ConversationDetailRead(ConversationRead):
+    messages: list[MessageRead]
+
+
+class SendMessageRequest(BaseModel):
+    content: str = Field(min_length=1)
