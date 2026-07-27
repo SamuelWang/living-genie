@@ -1,8 +1,11 @@
+import json
 import os
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
@@ -177,3 +180,120 @@ def real_commit_client():
 @pytest.fixture
 def authed_user_real_commits(real_commit_client: TestClient) -> AuthedUser:
     return register_and_login(real_commit_client, f"user-{uuid.uuid4().hex[:8]}@example.com")
+
+
+@pytest.fixture
+def second_real_commit_client(real_commit_client: TestClient):
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def other_user_real_commits(second_real_commit_client: TestClient) -> AuthedUser:
+    return register_and_login(second_real_commit_client, f"user-{uuid.uuid4().hex[:8]}@example.com")
+
+
+@dataclass
+class FakePoint:
+    """Mimics qdrant_client.models.ScoredPoint's `.payload` attribute access."""
+
+    payload: dict
+
+
+class FakeVectorStore:
+    """In-memory stand-in for app/vector_store.py, keyed like the real Qdrant collection."""
+
+    def __init__(self):
+        self.points: dict[tuple[uuid.UUID, int], dict] = {}
+        self.fail_upsert = False
+        self.fail_delete = False
+
+    def ensure_collection(self) -> None:
+        pass
+
+    def upsert_chunks(
+        self,
+        diary_entry_id: uuid.UUID,
+        user_id: uuid.UUID,
+        entry_date: date,
+        chunks: list[str],
+        vectors: list[list[float]],
+    ) -> None:
+        if self.fail_upsert:
+            raise RuntimeError("fake upsert failure")
+        self.delete_diary_entry_points(diary_entry_id, user_id)
+        for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
+            self.points[(diary_entry_id, index)] = {
+                "user_id": str(user_id),
+                "diary_entry_id": str(diary_entry_id),
+                "chunk_index": index,
+                "chunk_text": chunk,
+                "entry_date": entry_date.isoformat(),
+                "vector": vector,
+            }
+
+    def delete_diary_entry_points(self, diary_entry_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        if self.fail_delete:
+            raise RuntimeError("fake delete failure")
+        for key in [key for key in self.points if key[0] == diary_entry_id]:
+            del self.points[key]
+
+    def search(
+        self, user_id: uuid.UUID, query_vector: list[float], top_k: int
+    ) -> list[FakePoint]:
+        matches = [point for point in self.points.values() if point["user_id"] == str(user_id)]
+        return [FakePoint(payload=point) for point in matches[:top_k]]
+
+
+@pytest.fixture
+def fake_vector_store(monkeypatch):
+    store = FakeVectorStore()
+    monkeypatch.setattr("app.worker.ensure_collection", store.ensure_collection)
+    monkeypatch.setattr("app.worker.upsert_chunks", store.upsert_chunks)
+    monkeypatch.setattr("app.routers.diaries.delete_diary_entry_points", store.delete_diary_entry_points)
+    monkeypatch.setattr("app.routers.conversations.vector_search", store.search)
+    return store
+
+
+@dataclass
+class FakeOllamaClient:
+    """Deterministic stand-in for the ollama.Client used by embeddings.py/chat.py."""
+
+    chat_tokens: list[str] = field(default_factory=lambda: ["This ", "is ", "a ", "canned ", "reply."])
+    raise_on_chat: bool = False
+
+    def embed(self, model: str, input: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(embeddings=[[0.1, 0.2, 0.3] for _ in input])
+
+    def chat(self, model: str, messages: list[dict], stream: bool = True):
+        if self.raise_on_chat:
+            raise RuntimeError("fake chat failure")
+        for token in self.chat_tokens:
+            yield SimpleNamespace(message=SimpleNamespace(content=token))
+
+
+@pytest.fixture
+def fake_ollama_client(monkeypatch):
+    client = FakeOllamaClient()
+    monkeypatch.setattr("app.embeddings.get_ollama_client", lambda: client)
+    monkeypatch.setattr("app.chat.get_ollama_client", lambda: client)
+    return client
+
+
+def parse_sse_events(text: str) -> list[tuple[str, dict]]:
+    """Parses an SSE response body into an ordered list of (event, data) pairs."""
+    events: list[tuple[str, dict]] = []
+    normalized = text.replace("\r\n", "\n")
+    for block in normalized.strip("\n").split("\n\n"):
+        if not block.strip():
+            continue
+        event_name = None
+        data_lines = []
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event_name = line[len("event:") :].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[len("data:") :].strip())
+        if event_name is not None:
+            events.append((event_name, json.loads("".join(data_lines))))
+    return events
