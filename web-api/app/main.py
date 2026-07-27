@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.routers import auth, diaries, uploads
+from app.routers import auth, conversations, diaries, uploads
 from app.settings import get_settings
 
 _settings = get_settings()
@@ -26,6 +26,7 @@ app.add_middleware(
 _settings.uploads_dir.mkdir(parents=True, exist_ok=True)
 
 app.include_router(auth.router)
+app.include_router(conversations.router)
 app.include_router(diaries.router)
 app.include_router(uploads.router)
 app.include_router(uploads.media_router)
