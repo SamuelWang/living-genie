@@ -83,16 +83,46 @@ def delete_diary_entry_points(diary_entry_id: uuid.UUID, user_id: uuid.UUID) -> 
     )
 
 
+def _recency_bonus(entry_date: date, today: date, half_life_days: int) -> float:
+    age_days = max((today - entry_date).days, 0)
+    return 0.5 ** (age_days / half_life_days)
+
+
+def _hybrid_score(
+    cosine_score: float,
+    entry_date: date,
+    today: date,
+    recency_weight: float,
+    half_life_days: int,
+) -> float:
+    recency = _recency_bonus(entry_date, today, half_life_days)
+    return (1 - recency_weight) * cosine_score + recency_weight * recency
+
+
 def search(user_id: uuid.UUID, query_vector: list[float], top_k: int) -> list[models.ScoredPoint]:
     client = get_qdrant_client()
     if not client.collection_exists(COLLECTION_NAME):
         return []
+    settings = get_settings()
+    candidate_pool_size = max(settings.retrieval_candidate_pool_size, top_k)
     response = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
         query_filter=models.Filter(
             must=[models.FieldCondition(key="user_id", match=models.MatchValue(value=str(user_id)))]
         ),
-        limit=top_k,
+        limit=candidate_pool_size,
     )
-    return response.points
+    today = date.today()
+    ranked = sorted(
+        response.points,
+        key=lambda point: _hybrid_score(
+            point.score,
+            date.fromisoformat(point.payload["entry_date"]),
+            today,
+            settings.retrieval_recency_weight,
+            settings.retrieval_recency_half_life_days,
+        ),
+        reverse=True,
+    )
+    return ranked[:top_k]

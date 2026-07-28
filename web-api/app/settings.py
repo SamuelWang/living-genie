@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     embedding_chunk_size: int = 550
     embedding_chunk_overlap: int = 120
     retrieval_top_k: int = 5
+    retrieval_candidate_pool_size: int = 20
+    retrieval_recency_weight: float = 0.15
+    retrieval_recency_half_life_days: int = 180
     chat_context_turns: int = 3
     embedding_job_max_attempts: int = 3
     embedding_job_poll_interval_seconds: float = 2.0

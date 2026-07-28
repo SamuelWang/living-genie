@@ -16,6 +16,12 @@ def test_build_system_prompt_includes_scope_guarding_rules():
     assert "same language" in prompt
 
 
+def test_build_system_prompt_includes_recency_preference_rule():
+    prompt = build_system_prompt()
+    assert "latest date" in prompt
+    assert "most recent" in prompt
+
+
 def test_build_user_prompt_uses_no_context_marker_when_no_chunks():
     prompt = build_user_prompt("What did I write yesterday?", [], [])
     assert "No relevant diary content was found for this question." in prompt
