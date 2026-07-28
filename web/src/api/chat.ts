@@ -51,7 +51,10 @@ export async function sendMessageStream(
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      // sse-starlette/uvicorn write CRLF line endings, so blocks are separated by "\r\n\r\n" —
+      // normalize on the accumulated buffer (not per-chunk) so a "\r"/"\n" split across two
+      // read() calls still gets collapsed once both halves have arrived.
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
 
       let separatorIndex: number;
       while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {

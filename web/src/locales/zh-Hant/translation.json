@@ -1,6 +1,6 @@
 {
   "app": { "name": "Living Genie" },
-  "nav": { "logout": "登出", "diaries": "日記" },
+  "nav": { "logout": "登出", "diaries": "日記", "genie": "精靈" },
   "auth": {
     "loginTitle": "登入",
     "registerTitle": "註冊",
@@ -39,6 +39,23 @@
     "deleteButton": "刪除",
     "deleteConfirmTitle": "刪除日記？",
     "deleteConfirmDescription": "此動作將永久刪除「{{title}}」，且無法復原。",
+    "deleteConfirmAction": "刪除"
+  },
+  "genie": {
+    "listTitle": "精靈",
+    "newChatButton": "開始新對話",
+    "emptyState": "目前還沒有對話。",
+    "noPreview": "新對話",
+    "composerPlaceholder": "向精靈詢問你的日記…",
+    "sendButton": "傳送",
+    "streamingIndicator": "精靈思考中…",
+    "citationsLabel": "資料來源",
+    "citationDeleted": "已刪除的日記",
+    "conversationNotFound": "找不到這個對話。",
+    "backToList": "返回對話列表",
+    "deleteButton": "刪除",
+    "deleteConfirmTitle": "刪除對話？",
+    "deleteConfirmDescription": "此動作將永久刪除「{{preview}}」，且無法復原。",
     "deleteConfirmAction": "刪除"
   },
   "editor": {

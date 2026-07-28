@@ -7,6 +7,8 @@ import { DiaryListPage } from '@/pages/DiaryListPage';
 import { DiaryCreatePage } from '@/pages/DiaryCreatePage';
 import { DiaryDetailPage } from '@/pages/DiaryDetailPage';
 import { DiaryEditPage } from '@/pages/DiaryEditPage';
+import { GenieListPage } from '@/pages/GenieListPage';
+import { GenieConversationPage } from '@/pages/GenieConversationPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 export function AppRoutes() {
@@ -21,6 +23,9 @@ export function AppRoutes() {
           <Route path="/diaries/new" element={<DiaryCreatePage />} />
           <Route path="/diaries/:id" element={<DiaryDetailPage />} />
           <Route path="/diaries/:id/edit" element={<DiaryEditPage />} />
+          <Route path="/genie" element={<GenieListPage />} />
+          <Route path="/genie/new" element={<GenieConversationPage />} />
+          <Route path="/genie/:id" element={<GenieConversationPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

@@ -1,6 +1,6 @@
 {
   "app": { "name": "Living Genie" },
-  "nav": { "logout": "Log out", "diaries": "Diaries" },
+  "nav": { "logout": "Log out", "diaries": "Diaries", "genie": "Genie" },
   "auth": {
     "loginTitle": "Login",
     "registerTitle": "Register",
@@ -39,6 +39,23 @@
     "deleteButton": "Delete",
     "deleteConfirmTitle": "Delete diary entry?",
     "deleteConfirmDescription": "This will permanently delete \"{{title}}\". This cannot be undone.",
+    "deleteConfirmAction": "Delete"
+  },
+  "genie": {
+    "listTitle": "Genie",
+    "newChatButton": "New chat",
+    "emptyState": "No conversations yet.",
+    "noPreview": "New conversation",
+    "composerPlaceholder": "Ask Genie about your diary…",
+    "sendButton": "Send",
+    "streamingIndicator": "Genie is thinking…",
+    "citationsLabel": "Sources",
+    "citationDeleted": "Deleted entry",
+    "conversationNotFound": "This conversation could not be found.",
+    "backToList": "Back to conversations",
+    "deleteButton": "Delete",
+    "deleteConfirmTitle": "Delete conversation?",
+    "deleteConfirmDescription": "This will permanently delete \"{{preview}}\". This cannot be undone.",
     "deleteConfirmAction": "Delete"
   },
   "editor": {

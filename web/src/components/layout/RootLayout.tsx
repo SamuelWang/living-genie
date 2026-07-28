@@ -27,9 +27,12 @@ export function RootLayout() {
         <div className="flex items-center gap-6">
           <span className="font-semibold">{t('app.name')}</span>
           {user && (
-            <nav>
+            <nav className="flex items-center gap-4">
               <Link to="/diaries" className="text-sm font-medium hover:underline">
                 {t('nav.diaries')}
+              </Link>
+              <Link to="/genie" className="text-sm font-medium hover:underline">
+                {t('nav.genie')}
               </Link>
             </nav>
           )}
