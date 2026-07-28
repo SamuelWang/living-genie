@@ -13,3 +13,10 @@
 - Add a vector database for storing embedding vectors.
 - Implement the RAG workflow over diary entries.
 - Implement a single chatbot feature for diaries and future data sources.
+
+## v0.3.0
+
+- Compress uploaded images to the smallest possible size using lossless compression.
+- Implement full todo CRUD (create, view, edit, delete), scoped to the authenticated user.
+- Extend Genie with tool-calling so it can answer questions about the user's todos and create,
+  update, complete, or delete them through chat.
