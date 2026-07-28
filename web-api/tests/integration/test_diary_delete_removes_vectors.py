@@ -1,7 +1,6 @@
 import uuid
 from datetime import date
 
-import pytest
 from sqlalchemy.orm import Session
 
 from app.models import DiaryEntry
@@ -36,7 +35,7 @@ def test_delete_aborts_postgres_delete_when_vector_store_fails(
     entry_id = uuid.UUID(create_resp.json()["id"])
     fake_vector_store.fail_delete = True
 
-    with pytest.raises(RuntimeError, match="fake delete failure"):
-        authed_user.client.delete(f"/diaries/{entry_id}")
+    delete_resp = authed_user.client.delete(f"/diaries/{entry_id}")
 
+    assert delete_resp.status_code == 500, delete_resp.text
     assert db_session.get(DiaryEntry, entry_id) is not None

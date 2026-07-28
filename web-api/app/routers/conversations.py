@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,6 +21,8 @@ from app.schemas import (
 from app.security import get_current_user
 from app.settings import get_settings
 from app.vector_store import search as vector_search
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -222,6 +225,7 @@ def send_message(
                 accumulated += token
                 yield {"event": "token", "data": json.dumps({"text": token})}
         except Exception:
+            logger.exception("Chat generation failed for conversation %s", conversation.id)
             yield {
                 "event": "error",
                 "data": json.dumps({"message": "Something went wrong generating a reply."}),
