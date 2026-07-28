@@ -42,6 +42,7 @@ export function ChatBubble({ role, content, citations = [], streaming = false }:
                 key={citation.diary_entry_id}
                 to={`/diaries/${citation.diary_entry_id}`}
                 className="hover:bg-accent rounded-full border px-2 py-0.5 text-xs"
+                target="_blank"
               >
                 {citation.title ?? t('genie.citationDeleted')}
               </Link>
