@@ -5,7 +5,10 @@ from ollama import Client
 
 from app.settings import get_settings
 
-_PROMPT_PREFIXES: dict[str, str] = {"query": "query: ", "passage": "passage: "}
+_PROMPT_PREFIXES: dict[str, str] = {
+    "query": "task: search result | query: ",
+    "passage": "title: none | text: ",
+}
 
 
 @lru_cache

@@ -4,8 +4,11 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8")
 
     database_url: str
     uploads_dir: Path = Path("uploads")
@@ -15,8 +18,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     qdrant_url: str
     ollama_url: str
-    ollama_embedding_model: str = "zylonai/multilingual-e5-large"
-    ollama_chat_model: str = "gemma2:9b"
+    ollama_embedding_model: str = "embeddinggemma:300m"
+    ollama_chat_model: str = "gemma3:4b"
     embedding_chunk_size: int = 550
     embedding_chunk_overlap: int = 120
     retrieval_top_k: int = 5

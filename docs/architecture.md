@@ -135,16 +135,21 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
 ## AI / RAG pipeline
 
 - **Local inference**: an `ollama` service serves both embedding and chat generation; model tags
-  are configurable via `OLLAMA_EMBEDDING_MODEL` (default `multilingual-e5-large`) and
-  `OLLAMA_CHAT_MODEL` (default `gemma2:9b`, with `gemma2:2b` as a lighter option for constrained
-  hardware) environment variables. Both are non-China-origin, open-weight models sized to run
-  CPU-only. `multilingual-e5-large` (Microsoft Research) was chosen over the smaller, more common
-  `nomic-embed-text` because it's explicitly multilingual-trained (including Chinese), which
-  matters since diary content is expected to be mostly Traditional Chinese; it's pulled from a
-  community-published GGUF quantization rather than Ollama's official curated library. `gemma2`
-  (Google) was chosen for chat generation for its license permissiveness and reasonable
-  multilingual coverage. Models are pulled on first startup via a one-shot init step (a
-  short-lived service running `ollama pull` against the `ollama` service, exiting once done).
+  are configurable via `OLLAMA_EMBEDDING_MODEL` (default `embeddinggemma:300m`) and
+  `OLLAMA_CHAT_MODEL` (default `gemma3:4b`) environment variables. Both are non-China-origin,
+  open-weight models that run CPU-only if needed, though interactive-latency chat generation
+  benefits substantially from GPU acceleration — the `ollama` service requests an NVIDIA GPU via
+  Docker Compose's `deploy.resources.reservations.devices` (falls back to CPU automatically if
+  none is available on the host). `embeddinggemma:300m` (Google) is used for embeddings: small
+  (~300M params) and explicitly multilingual-trained (100+ languages, including Chinese), which
+  matters since diary content is expected to be mostly Traditional Chinese; it's pulled from
+  Ollama's official library. Its query/document prompts follow EmbeddingGemma's own convention
+  (`task: search result | query: ...` / `title: none | text: ...`) prefixes — 
+  see `embed_texts()` in `web-api/app/embeddings.py`. `gemma3` (Google) was chosen for chat
+  generation for its license permissiveness and multilingual coverage — `gemma2:9b` was the
+  original pin, but proved too large to load in reasonable time on modest/CPU-only hardware;
+  `gemma3:4b` is the smaller replacement. Models are pulled on first startup via a one-shot
+  init step (a short-lived service running `ollama pull` against the `ollama` service, exiting once done).
 
 - **Chunking**: on diary entry create/update, `web-api` enqueues a row in `embedding_jobs` with
   status `pending` rather than embedding inline, keeping the save request fast.
@@ -162,7 +167,7 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   job table.
 
 - **Vector store**: a single Qdrant collection, `diary_chunks`. Vector size matches the embedding
-  model's dimension (1024 for `multilingual-e5-large`), using Cosine distance. Payload per point:
+  model's dimension (768 for `embeddinggemma:300m`), using Cosine distance. Payload per point:
   `user_id`, `diary_entry_id`, `chunk_index`, `chunk_text`, `entry_date` — payload-indexed on
   `user_id` so every search is filtered to the requesting account, mirroring the app-level
   scoping already used for diary and session data.

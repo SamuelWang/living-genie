@@ -21,6 +21,13 @@ services:
       - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "ollama list || exit 1"]
       interval: 5s
@@ -86,6 +93,8 @@ services:
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
     command: ["python", "-m", "app.worker"]
+    healthcheck:
+      disable: true
     depends_on:
       postgres:
         condition: service_healthy

@@ -35,6 +35,8 @@ For local (non-Docker) development, running tests, and full configuration refere
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — technical design.
+- [docs/ollama-model-evaluation.md](docs/ollama-model-evaluation.md) — how to test a candidate
+  Ollama model on your hardware before configuring it.
 - [docs/requirements/v0.1.0.md](docs/requirements/v0.1.0.md) — functional requirements and
   acceptance criteria for this release.
 - [docs/roadmap.md](docs/roadmap.md) — what's planned beyond v0.1.0.

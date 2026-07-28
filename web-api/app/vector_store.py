@@ -7,7 +7,7 @@ from qdrant_client import QdrantClient, models
 from app.settings import get_settings
 
 COLLECTION_NAME = "diary_chunks"
-VECTOR_SIZE = 1024
+VECTOR_SIZE = 768
 _POINT_ID_NAMESPACE = uuid.UUID("2f5b6b2a-9c3e-4b8e-9c0a-9a5f6d9c2b10")
 
 
