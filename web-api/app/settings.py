@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     chat_context_turns: int = 3
     embedding_job_max_attempts: int = 3
     embedding_job_poll_interval_seconds: float = 2.0
+    chat_tool_max_iterations: int = 4
+    ollama_chat_temperature: float = 0.9
+    ollama_chat_repeat_penalty: float = 1.3
 
 
 @lru_cache
