@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from app.db import get_db
-from app.routers import auth, conversations, diaries, uploads
+from app.routers import auth, conversations, diaries, todos, uploads
 from app.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ _settings.uploads_dir.mkdir(parents=True, exist_ok=True)
 app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(diaries.router)
+app.include_router(todos.router)
 app.include_router(uploads.router)
 app.include_router(uploads.media_router)
 
