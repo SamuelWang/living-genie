@@ -7,19 +7,20 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from sse_starlette import EventSourceResponse
 
-from app.chat import build_system_prompt, build_user_prompt, generate_reply_stream
+from app.chat import build_system_prompt, build_user_prompt, run_chat_with_tools
 from app.db import SessionLocal, get_db
 from app.embeddings import embed_texts
-from app.models import Conversation, DiaryEntry, Message, User
+from app.models import Conversation, DiaryEntry, Message, MessageReference, Todo, User
 from app.schemas import (
-    CitationRead,
     ConversationDetailRead,
     ConversationRead,
     MessageRead,
+    MessageReferenceRead,
     SendMessageRequest,
 )
 from app.security import get_current_user
 from app.settings import get_settings
+from app.todo_tools import execute_tool
 from app.vector_store import search as vector_search
 
 logger = logging.getLogger(__name__)
@@ -44,27 +45,63 @@ def _get_conversation_or_404(
     return conversation
 
 
-def _citations_for_entry_ids(
-    db: Session, user_id: uuid.UUID, entry_ids: list[uuid.UUID]
-) -> list[CitationRead]:
-    if not entry_ids:
+def _resolve_references(
+    db: Session, user_id: uuid.UUID, refs: list[tuple[str, uuid.UUID]]
+) -> list[MessageReferenceRead]:
+    if not refs:
         return []
-    entries = {
-        entry.id: entry
-        for entry in db.scalars(
-            select(DiaryEntry).where(
-                DiaryEntry.id.in_(entry_ids), DiaryEntry.user_id == user_id
+
+    diary_ids = {ref_id for ref_type, ref_id in refs if ref_type == "diary_entry"}
+    todo_ids = {ref_id for ref_type, ref_id in refs if ref_type == "todo"}
+
+    diary_entries = (
+        {
+            entry.id: entry
+            for entry in db.scalars(
+                select(DiaryEntry).where(
+                    DiaryEntry.id.in_(diary_ids), DiaryEntry.user_id == user_id
+                )
             )
-        )
-    }
-    return [
-        CitationRead(
-            diary_entry_id=entry_id,
-            title=entries[entry_id].title if entry_id in entries else None,
-            entry_date=entries[entry_id].entry_date if entry_id in entries else None,
-        )
-        for entry_id in entry_ids
-    ]
+        }
+        if diary_ids
+        else {}
+    )
+    todos = (
+        {
+            todo.id: todo
+            for todo in db.scalars(
+                select(Todo).where(Todo.id.in_(todo_ids), Todo.user_id == user_id)
+            )
+        }
+        if todo_ids
+        else {}
+    )
+
+    resolved: list[MessageReferenceRead] = []
+    for ref_type, ref_id in refs:
+        if ref_type == "diary_entry":
+            entry = diary_entries.get(ref_id)
+            resolved.append(
+                MessageReferenceRead(
+                    source_type="diary_entry",
+                    id=ref_id,
+                    title=entry.title if entry else None,
+                    entry_date=entry.entry_date if entry else None,
+                    completed=None,
+                )
+            )
+        else:
+            todo = todos.get(ref_id)
+            resolved.append(
+                MessageReferenceRead(
+                    source_type="todo",
+                    id=ref_id,
+                    title=todo.title if todo else None,
+                    entry_date=None,
+                    completed=todo.completed if todo else None,
+                )
+            )
+    return resolved
 
 
 def _preview_for_conversation(db: Session, conversation_id: uuid.UUID) -> str | None:
@@ -132,8 +169,10 @@ def get_conversation(
             role=message.role,
             content=message.content,
             created_at=message.created_at,
-            citations=_citations_for_entry_ids(
-                db, current_user.id, message.cited_diary_entry_ids or []
+            references=_resolve_references(
+                db,
+                current_user.id,
+                [(ref.source_type, ref.source_id) for ref in message.references],
             ),
         )
         for message in conversation.messages
@@ -177,22 +216,17 @@ def send_message(
     points = vector_search(current_user.id, query_vector, settings.retrieval_top_k)
 
     retrieved_chunks: list[dict] = []
-    entry_ids: list[uuid.UUID] = []
-    seen_entry_ids: set[uuid.UUID] = set()
+    all_refs: list[tuple[str, uuid.UUID]] = []
+    seen_refs: set[tuple[str, uuid.UUID]] = set()
     for point in points:
         point_payload = point.payload or {}
         retrieved_chunks.append(
-            {
-                "entry_date": point_payload["entry_date"],
-                "chunk_text": point_payload["chunk_text"],
-            }
+            {"date": point_payload["date"], "chunk_text": point_payload["chunk_text"]}
         )
-        entry_id = uuid.UUID(point_payload["diary_entry_id"])
-        if entry_id not in seen_entry_ids:
-            seen_entry_ids.add(entry_id)
-            entry_ids.append(entry_id)
-
-    citations = _citations_for_entry_ids(db, current_user.id, entry_ids)
+        ref = (point_payload["source_type"], uuid.UUID(point_payload["source_id"]))
+        if ref not in seen_refs:
+            seen_refs.add(ref)
+            all_refs.append(ref)
 
     recent_turns = list(
         reversed(
@@ -211,17 +245,30 @@ def send_message(
     system_prompt = build_system_prompt()
     user_prompt = build_user_prompt(payload.content, retrieved_chunks, recent_turns)
 
+    def execute_tool_call(name: str, arguments: dict) -> dict:
+        return execute_tool(db, current_user.id, name, arguments)
+
+    mutated_refs, token_iterator = run_chat_with_tools(
+        system_prompt, user_prompt, execute_tool_call
+    )
+    for ref in mutated_refs:
+        if ref not in seen_refs:
+            seen_refs.add(ref)
+            all_refs.append(ref)
+
+    references = _resolve_references(db, current_user.id, all_refs)
+
     def event_generator():
         yield {
-            "event": "citations",
+            "event": "references",
             "data": json.dumps(
-                {"citations": [citation.model_dump(mode="json") for citation in citations]}
+                {"references": [reference.model_dump(mode="json") for reference in references]}
             ),
         }
 
         accumulated = ""
         try:
-            for token in generate_reply_stream(system_prompt, user_prompt):
+            for token in token_iterator:
                 accumulated += token
                 yield {"event": "token", "data": json.dumps({"text": token})}
         except Exception:
@@ -238,9 +285,15 @@ def send_message(
                 conversation_id=conversation.id,
                 role="assistant",
                 content=accumulated,
-                cited_diary_entry_ids=entry_ids or None,
             )
             session.add(assistant_message)
+            session.flush()
+            for ref_type, ref_id in all_refs:
+                session.add(
+                    MessageReference(
+                        message_id=assistant_message.id, source_type=ref_type, source_id=ref_id
+                    )
+                )
             session.execute(
                 update(Conversation)
                 .where(Conversation.id == conversation.id)
