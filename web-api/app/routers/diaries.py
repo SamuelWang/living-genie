@@ -10,7 +10,7 @@ from app.media import delete_media_files, extract_media_filenames
 from app.models import DiaryEntry, EmbeddingJob, User
 from app.schemas import DiaryEntryCreate, DiaryEntryRead, DiaryEntrySummary, DiaryEntryUpdate
 from app.security import get_current_user
-from app.vector_store import delete_diary_entry_points
+from app.vector_store import delete_source_points
 
 router = APIRouter(prefix="/diaries", tags=["diaries"])
 
@@ -40,7 +40,7 @@ def create_diary_entry(
     db.commit()
     db.refresh(entry)
 
-    db.add(EmbeddingJob(diary_entry_id=entry.id))
+    db.add(EmbeddingJob(source_type="diary_entry", source_id=entry.id))
     db.commit()
 
     return entry
@@ -83,7 +83,7 @@ def update_diary_entry(
     db.refresh(entry)
 
     if "content" in payload_fields:
-        db.add(EmbeddingJob(diary_entry_id=entry.id))
+        db.add(EmbeddingJob(source_type="diary_entry", source_id=entry.id))
         db.commit()
 
         new_filenames = extract_media_filenames(entry.content, current_user.id)
@@ -100,7 +100,7 @@ def delete_diary_entry(
 ) -> None:
     entry = _get_entry_or_404(db, entry_id, current_user.id)
     filenames = extract_media_filenames(entry.content, current_user.id)
-    delete_diary_entry_points(entry.id, current_user.id)
+    delete_source_points("diary_entry", entry.id, current_user.id)
     db.delete(entry)
     db.commit()
     delete_media_files(filenames, current_user.id)

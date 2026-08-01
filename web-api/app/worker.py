@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.chunking import chunk_text
 from app.db import SessionLocal
 from app.embeddings import embed_texts
-from app.models import DiaryEntry, EmbeddingJob
+from app.models import DiaryEntry, EmbeddingJob, Todo
 from app.settings import get_settings
 from app.vector_store import ensure_collection, upsert_chunks
 
@@ -38,18 +38,30 @@ def process_next_job(db: Session) -> bool:
     job.status = "processing"
     db.commit()
 
-    entry = db.get(DiaryEntry, job.diary_entry_id)
-    if entry is None:
-        logger.info("Diary entry %s gone; skipping job %s", job.diary_entry_id, job.id)
+    if job.source_type == "diary_entry":
+        source = db.get(DiaryEntry, job.source_id)
+    else:
+        source = db.get(Todo, job.source_id)
+    if source is None:
+        logger.info("%s %s gone; skipping job %s", job.source_type, job.source_id, job.id)
         return True
 
     settings = get_settings()
     try:
-        chunks = chunk_text(
-            entry.content, settings.embedding_chunk_size, settings.embedding_chunk_overlap
-        )
+        if job.source_type == "diary_entry":
+            chunks = chunk_text(
+                source.content, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+            )
+            source_date = source.entry_date
+        else:
+            status_text = "done" if source.completed else "pending"
+            composed = f"{source.title}\n{source.description or ''}\nStatus: {status_text}"
+            chunks = chunk_text(
+                composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+            )
+            source_date = source.due_date or source.created_at.date()
         vectors = embed_texts(chunks, kind="passage") if chunks else []
-        upsert_chunks(entry.id, entry.user_id, entry.entry_date, chunks, vectors)
+        upsert_chunks(job.source_type, job.source_id, source.user_id, source_date, chunks, vectors)
         job.status = "completed"
         db.commit()
     except Exception as exc:
