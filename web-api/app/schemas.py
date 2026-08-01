@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -35,6 +36,40 @@ class DiaryEntrySummary(BaseModel):
     entry_date: date
 
 
+class TodoCreate(BaseModel):
+    title: str = Field(min_length=1)
+    description: str | None = None
+    due_date: date | None = None
+
+
+class TodoUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+    due_date: date | None = None
+    completed: bool | None = None
+
+
+class TodoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    description: str | None
+    due_date: date | None
+    completed: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TodoSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    due_date: date | None
+    completed: bool
+
+
 class UploadResponse(BaseModel):
     url: str
 
@@ -57,12 +92,14 @@ class UserLogin(BaseModel):
     password: str
 
 
-class CitationRead(BaseModel):
+class MessageReferenceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    diary_entry_id: uuid.UUID
+    source_type: Literal["diary_entry", "todo"]
+    id: uuid.UUID
     title: str | None
     entry_date: date | None
+    completed: bool | None
 
 
 class MessageRead(BaseModel):
@@ -72,7 +109,7 @@ class MessageRead(BaseModel):
     role: str
     content: str
     created_at: datetime
-    citations: list[CitationRead]
+    references: list[MessageReferenceRead]
 
 
 class ConversationRead(BaseModel):
