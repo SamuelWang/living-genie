@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import Conversation, Message
+from app.models import Conversation, Message, MessageReference
 from tests.conftest import AuthedUser
 
 
@@ -59,12 +59,14 @@ def test_get_conversation_resolves_citations(authed_user: AuthedUser, db_session
     conversation_id = _create_conversation(authed_user)
 
     db_session.add(Message(conversation_id=conversation_id, role="user", content="Tell me about it"))
+    assistant_message = Message(
+        conversation_id=conversation_id, role="assistant", content="You went on a trip."
+    )
+    db_session.add(assistant_message)
+    db_session.flush()
     db_session.add(
-        Message(
-            conversation_id=conversation_id,
-            role="assistant",
-            content="You went on a trip.",
-            cited_diary_entry_ids=[entry_id],
+        MessageReference(
+            message_id=assistant_message.id, source_type="diary_entry", source_id=entry_id
         )
     )
     db_session.commit()
@@ -72,11 +74,12 @@ def test_get_conversation_resolves_citations(authed_user: AuthedUser, db_session
     resp = authed_user.client.get(f"/conversations/{conversation_id}")
     assert resp.status_code == 200, resp.text
     messages = resp.json()["messages"]
-    assistant_message = next(m for m in messages if m["role"] == "assistant")
-    assert len(assistant_message["citations"]) == 1
-    citation = assistant_message["citations"][0]
-    assert citation["diary_entry_id"] == str(entry_id)
-    assert citation["title"] == "Trip"
+    assistant = next(m for m in messages if m["role"] == "assistant")
+    assert len(assistant["references"]) == 1
+    reference = assistant["references"][0]
+    assert reference["source_type"] == "diary_entry"
+    assert reference["id"] == str(entry_id)
+    assert reference["title"] == "Trip"
 
 
 def test_get_conversation_citation_fallback_for_deleted_entry(
@@ -84,22 +87,23 @@ def test_get_conversation_citation_fallback_for_deleted_entry(
 ):
     deleted_entry_id = uuid.uuid4()
     conversation_id = _create_conversation(authed_user)
+    assistant_message = Message(conversation_id=conversation_id, role="assistant", content="Reply.")
+    db_session.add(assistant_message)
+    db_session.flush()
     db_session.add(
-        Message(
-            conversation_id=conversation_id,
-            role="assistant",
-            content="Reply.",
-            cited_diary_entry_ids=[deleted_entry_id],
+        MessageReference(
+            message_id=assistant_message.id, source_type="diary_entry", source_id=deleted_entry_id
         )
     )
     db_session.commit()
 
     resp = authed_user.client.get(f"/conversations/{conversation_id}")
     assert resp.status_code == 200, resp.text
-    citation = resp.json()["messages"][0]["citations"][0]
-    assert citation["diary_entry_id"] == str(deleted_entry_id)
-    assert citation["title"] is None
-    assert citation["entry_date"] is None
+    reference = resp.json()["messages"][0]["references"][0]
+    assert reference["source_type"] == "diary_entry"
+    assert reference["id"] == str(deleted_entry_id)
+    assert reference["title"] is None
+    assert reference["entry_date"] is None
 
 
 def test_delete_conversation_removes_it(authed_user: AuthedUser):

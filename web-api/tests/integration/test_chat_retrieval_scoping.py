@@ -5,20 +5,21 @@ from tests.conftest import AuthedUser, parse_sse_events
 
 
 def _seed_point(fake_vector_store, *, user_id: uuid.UUID, entry_id: uuid.UUID, chunk_index: int, text: str):
-    fake_vector_store.points[(entry_id, chunk_index)] = {
+    fake_vector_store.points[("diary_entry", entry_id, chunk_index)] = {
         "user_id": str(user_id),
-        "diary_entry_id": str(entry_id),
+        "source_type": "diary_entry",
+        "source_id": str(entry_id),
         "chunk_index": chunk_index,
         "chunk_text": text,
-        "entry_date": date.today().isoformat(),
+        "date": date.today().isoformat(),
         "vector": [0.1, 0.2, 0.3],
     }
 
 
-def _citations_from_response(resp) -> list[dict]:
+def _references_from_response(resp) -> list[dict]:
     events = parse_sse_events(resp.text)
-    citations_event = next(data for event, data in events if event == "citations")
-    return citations_event["citations"]
+    references_event = next(data for event, data in events if event == "references")
+    return references_event["references"]
 
 
 def test_user_a_never_retrieves_user_b_citations(
@@ -62,8 +63,8 @@ def test_user_a_never_retrieves_user_b_citations(
     )
     assert resp.status_code == 200, resp.text
 
-    citations = _citations_from_response(resp)
-    cited_ids = {citation["diary_entry_id"] for citation in citations}
+    references = _references_from_response(resp)
+    cited_ids = {reference["id"] for reference in references}
     assert cited_ids == {str(a_entry_id)}
     assert str(b_entry_id) not in cited_ids
 
@@ -97,6 +98,6 @@ def test_citations_are_deduped_per_diary_entry(
     )
     assert resp.status_code == 200, resp.text
 
-    citations = _citations_from_response(resp)
-    matching = [c for c in citations if c["diary_entry_id"] == str(entry_id)]
+    references = _references_from_response(resp)
+    matching = [r for r in references if r["id"] == str(entry_id)]
     assert len(matching) == 1

@@ -248,9 +248,21 @@ def send_message(
     def execute_tool_call(name: str, arguments: dict) -> dict:
         return execute_tool(db, current_user.id, name, arguments)
 
-    mutated_refs, token_iterator = run_chat_with_tools(
-        system_prompt, user_prompt, execute_tool_call
-    )
+    try:
+        mutated_refs, token_iterator = run_chat_with_tools(
+            system_prompt, user_prompt, execute_tool_call
+        )
+    except Exception:
+        logger.exception("Chat generation failed for conversation %s", conversation.id)
+
+        def error_event_generator():
+            yield {
+                "event": "error",
+                "data": json.dumps({"message": "Something went wrong generating a reply."}),
+            }
+
+        return EventSourceResponse(error_event_generator())
+
     for ref in mutated_refs:
         if ref not in seen_refs:
             seen_refs.add(ref)

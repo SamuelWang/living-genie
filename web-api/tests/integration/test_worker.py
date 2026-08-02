@@ -11,7 +11,9 @@ from tests.conftest import AuthedUser
 
 def _job_for_entry(db_session: Session, entry_id: uuid.UUID) -> EmbeddingJob:
     return db_session.scalar(
-        select(EmbeddingJob).where(EmbeddingJob.diary_entry_id == entry_id)
+        select(EmbeddingJob).where(
+            EmbeddingJob.source_id == entry_id, EmbeddingJob.source_type == "diary_entry"
+        )
     )
 
 
@@ -29,7 +31,7 @@ def test_process_next_job_pending_to_completed(
 
     assert result is True
     assert job.status == "completed"
-    stored = [point for point in fake_vector_store.points.values() if point["diary_entry_id"] == str(entry_id)]
+    stored = [point for point in fake_vector_store.points.values() if point["source_id"] == str(entry_id)]
     assert len(stored) >= 1
 
 

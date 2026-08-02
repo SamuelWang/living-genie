@@ -10,7 +10,9 @@ from tests.conftest import AuthedUser
 def _jobs_for_entry(db_session: Session, entry_id: uuid.UUID) -> list[EmbeddingJob]:
     return list(
         db_session.scalars(
-            select(EmbeddingJob).where(EmbeddingJob.diary_entry_id == entry_id)
+            select(EmbeddingJob).where(
+                EmbeddingJob.source_id == entry_id, EmbeddingJob.source_type == "diary_entry"
+            )
         ).all()
     )
 
@@ -52,9 +54,12 @@ def test_update_title_only_does_not_enqueue_job(authed_user: AuthedUser, db_sess
     assert len(jobs) == 1
 
 
-def test_delete_diary_entry_cascades_job_rows(
+def test_delete_diary_entry_leaves_job_rows_orphaned(
     authed_user: AuthedUser, db_session: Session, fake_vector_store
 ):
+    # EmbeddingJob.source_id intentionally has no FK (architecture.md's rationale: scales to a
+    # future third source with no schema change), so deleting the entry does NOT cascade-delete
+    # its job rows — they're left as orphans the worker tolerates as an ordinary race condition.
     create_resp = authed_user.client.post("/diaries", json={"title": "Trip", "content": "Draft."})
     entry_id = uuid.UUID(create_resp.json()["id"])
     assert len(_jobs_for_entry(db_session, entry_id)) == 1
@@ -62,4 +67,4 @@ def test_delete_diary_entry_cascades_job_rows(
     delete_resp = authed_user.client.delete(f"/diaries/{entry_id}")
     assert delete_resp.status_code == 204, delete_resp.text
 
-    assert _jobs_for_entry(db_session, entry_id) == []
+    assert len(_jobs_for_entry(db_session, entry_id)) == 1

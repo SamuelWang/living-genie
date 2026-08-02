@@ -54,7 +54,7 @@ def _scored_point(point_id: str, score: float, entry_date: str) -> models.Scored
         id=point_id,
         version=0,
         score=score,
-        payload={"entry_date": entry_date},
+        payload={"date": entry_date},
         vector=None,
     )
 

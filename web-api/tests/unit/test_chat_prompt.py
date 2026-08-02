@@ -22,16 +22,21 @@ def test_build_system_prompt_includes_recency_preference_rule():
     assert "most recent" in prompt
 
 
+def test_build_system_prompt_includes_persona_tone_instruction():
+    prompt = build_system_prompt()
+    assert "warm, perceptive companion" in prompt
+
+
 def test_build_user_prompt_uses_no_context_marker_when_no_chunks():
     prompt = build_user_prompt("What did I write yesterday?", [], [])
-    assert "No relevant diary content was found for this question." in prompt
+    assert "No relevant content was found for this question." in prompt
     assert "What did I write yesterday?" in prompt
 
 
 def test_build_user_prompt_includes_retrieved_chunks():
     chunks = [
-        {"entry_date": "2026-07-20", "chunk_text": "Went hiking."},
-        {"entry_date": "2026-07-21", "chunk_text": "Read a book."},
+        {"date": "2026-07-20", "chunk_text": "Went hiking."},
+        {"date": "2026-07-21", "chunk_text": "Read a book."},
     ]
     prompt = build_user_prompt("What did I do?", chunks, [])
     assert "[2026-07-20] Went hiking." in prompt

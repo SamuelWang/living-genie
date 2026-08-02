@@ -4,13 +4,16 @@ from datetime import date
 from tests.conftest import AuthedUser, parse_sse_events
 
 
-def _seed_point(fake_vector_store, *, user_id: uuid.UUID, entry_id: uuid.UUID, text: str):
-    fake_vector_store.points[(entry_id, 0)] = {
+def _seed_point(
+    fake_vector_store, *, user_id: uuid.UUID, entry_id: uuid.UUID, text: str, source_type: str = "diary_entry"
+):
+    fake_vector_store.points[(source_type, entry_id, 0)] = {
         "user_id": str(user_id),
-        "diary_entry_id": str(entry_id),
+        "source_type": source_type,
+        "source_id": str(entry_id),
         "chunk_index": 0,
         "chunk_text": text,
-        "entry_date": date.today().isoformat(),
+        "date": date.today().isoformat(),
         "vector": [0.1, 0.2, 0.3],
     }
 
@@ -36,7 +39,7 @@ def test_event_ordering_is_citations_then_tokens_then_done(
     events = parse_sse_events(resp.text)
     names = [event for event, _ in events]
 
-    assert names[0] == "citations"
+    assert names[0] == "references"
     assert names[-1] == "done"
     assert all(name == "token" for name in names[1:-1])
     assert "token" in names
@@ -52,8 +55,8 @@ def test_empty_retrieval_still_returns_200_with_no_citations(
     assert resp.status_code == 200, resp.text
 
     events = parse_sse_events(resp.text)
-    citations_event = next(data for event, data in events if event == "citations")
-    assert citations_event["citations"] == []
+    references_event = next(data for event, data in events if event == "references")
+    assert references_event["references"] == []
     assert any(event == "done" for event, _ in events)
 
 
@@ -84,7 +87,7 @@ def test_successful_reply_persists_assistant_message_with_citations(
     assistant_message = next(m for m in body["messages"] if m["role"] == "assistant")
     assert assistant_message["id"] == done_data["id"]
     assert assistant_message["content"] == "This is a canned reply."
-    assert [c["diary_entry_id"] for c in assistant_message["citations"]] == [str(entry_id)]
+    assert [r["id"] for r in assistant_message["references"]] == [str(entry_id)]
     assert body["updated_at"] > created_at
 
 

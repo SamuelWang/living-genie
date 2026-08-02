@@ -30,7 +30,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.db import SessionLocal, engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import User  # noqa: E402
+from app.models import EmbeddingJob, User  # noqa: E402
 from app.settings import get_settings  # noqa: E402
 
 WEB_API_ROOT = Path(__file__).resolve().parent.parent
@@ -173,6 +173,10 @@ def real_commit_client():
     app.dependency_overrides.clear()
 
     with SessionLocal() as cleanup_session:
+        # EmbeddingJob.source_id has no FK (by design, see architecture.md), so it isn't
+        # cleaned up transitively by deleting users — leftover rows would otherwise leak
+        # into later tests (e.g. worker.process_next_job picking up a stale job).
+        cleanup_session.query(EmbeddingJob).delete()
         cleanup_session.query(User).delete()
         cleanup_session.commit()
 
@@ -204,7 +208,7 @@ class FakeVectorStore:
     """In-memory stand-in for app/vector_store.py, keyed like the real Qdrant collection."""
 
     def __init__(self):
-        self.points: dict[tuple[uuid.UUID, int], dict] = {}
+        self.points: dict[tuple[str, uuid.UUID, int], dict] = {}
         self.fail_upsert = False
         self.fail_delete = False
 
@@ -213,29 +217,31 @@ class FakeVectorStore:
 
     def upsert_chunks(
         self,
-        diary_entry_id: uuid.UUID,
+        source_type: str,
+        source_id: uuid.UUID,
         user_id: uuid.UUID,
-        entry_date: date,
+        date: date,
         chunks: list[str],
         vectors: list[list[float]],
     ) -> None:
         if self.fail_upsert:
             raise RuntimeError("fake upsert failure")
-        self.delete_diary_entry_points(diary_entry_id, user_id)
+        self.delete_source_points(source_type, source_id, user_id)
         for index, (chunk, vector) in enumerate(zip(chunks, vectors)):
-            self.points[(diary_entry_id, index)] = {
+            self.points[(source_type, source_id, index)] = {
                 "user_id": str(user_id),
-                "diary_entry_id": str(diary_entry_id),
+                "source_type": source_type,
+                "source_id": str(source_id),
                 "chunk_index": index,
                 "chunk_text": chunk,
-                "entry_date": entry_date.isoformat(),
+                "date": date.isoformat(),
                 "vector": vector,
             }
 
-    def delete_diary_entry_points(self, diary_entry_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    def delete_source_points(self, source_type: str, source_id: uuid.UUID, user_id: uuid.UUID) -> None:
         if self.fail_delete:
             raise RuntimeError("fake delete failure")
-        for key in [key for key in self.points if key[0] == diary_entry_id]:
+        for key in [key for key in self.points if key[0] == source_type and key[1] == source_id]:
             del self.points[key]
 
     def search(
@@ -250,7 +256,9 @@ def fake_vector_store(monkeypatch):
     store = FakeVectorStore()
     monkeypatch.setattr("app.worker.ensure_collection", store.ensure_collection)
     monkeypatch.setattr("app.worker.upsert_chunks", store.upsert_chunks)
-    monkeypatch.setattr("app.routers.diaries.delete_diary_entry_points", store.delete_diary_entry_points)
+    monkeypatch.setattr("app.routers.diaries.delete_source_points", store.delete_source_points)
+    monkeypatch.setattr("app.routers.todos.delete_source_points", store.delete_source_points)
+    monkeypatch.setattr("app.todo_tools.delete_source_points", store.delete_source_points)
     monkeypatch.setattr("app.routers.conversations.vector_search", store.search)
     return store
 
@@ -261,15 +269,43 @@ class FakeOllamaClient:
 
     chat_tokens: list[str] = field(default_factory=lambda: ["This ", "is ", "a ", "canned ", "reply."])
     raise_on_chat: bool = False
+    tool_call_turns: list[list[dict]] = field(default_factory=list)
+    """Each item is one non-streaming loop iteration's tool_calls, e.g.
+    [{"name": "create_todo", "arguments": {"title": "Buy milk"}}]. Once exhausted, further
+    stream=False calls return tool_calls=None, ending run_chat_with_tools's loop."""
+    _tool_turn_index: int = field(default=0, init=False)
 
     def embed(self, model: str, input: list[str]) -> SimpleNamespace:
         return SimpleNamespace(embeddings=[[0.1, 0.2, 0.3] for _ in input])
 
-    def chat(self, model: str, messages: list[dict], stream: bool = True):
+    def chat(
+        self,
+        model: str,
+        messages: list[dict],
+        stream: bool = True,
+        tools: list[dict] | None = None,
+        options: dict | None = None,
+    ):
         if self.raise_on_chat:
             raise RuntimeError("fake chat failure")
+        if stream:
+            return self._stream_tokens()
+        return self._next_nonstream_response()
+
+    def _stream_tokens(self):
         for token in self.chat_tokens:
             yield SimpleNamespace(message=SimpleNamespace(content=token))
+
+    def _next_nonstream_response(self) -> SimpleNamespace:
+        if self._tool_turn_index < len(self.tool_call_turns):
+            calls = self.tool_call_turns[self._tool_turn_index]
+            self._tool_turn_index += 1
+            tool_calls = [
+                SimpleNamespace(function=SimpleNamespace(name=call["name"], arguments=call["arguments"]))
+                for call in calls
+            ]
+            return SimpleNamespace(message=SimpleNamespace(content="", tool_calls=tool_calls))
+        return SimpleNamespace(message=SimpleNamespace(content="", tool_calls=None))
 
 
 @pytest.fixture
