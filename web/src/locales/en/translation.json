@@ -53,6 +53,12 @@
     "editSubmit": "Save changes",
     "titleRequired": "Title is required",
     "emptyState": "No todos yet.",
+    "emptyStateFiltered": "No todos match this filter.",
+    "filter": {
+      "all": "All",
+      "pending": "Pending",
+      "completed": "Completed"
+    },
     "newTodoButton": "New todo",
     "detailBackToList": "Back to list",
     "todoNotFound": "This todo could not be found.",

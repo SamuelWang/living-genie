@@ -53,6 +53,12 @@
     "editSubmit": "儲存變更",
     "titleRequired": "請輸入標題",
     "emptyState": "目前還沒有待辦事項。",
+    "emptyStateFiltered": "沒有符合篩選條件的待辦事項。",
+    "filter": {
+      "all": "全部",
+      "pending": "待完成",
+      "completed": "已完成"
+    },
     "newTodoButton": "新增待辦事項",
     "detailBackToList": "返回列表",
     "todoNotFound": "找不到這個待辦事項。",

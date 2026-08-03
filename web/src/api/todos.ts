@@ -1,7 +1,10 @@
 import type { TodoCreate, TodoRead, TodoSummary, TodoUpdate } from './types';
 import { apiClient } from './client';
 
-export const listTodos = () => apiClient.get<TodoSummary[]>('/todos');
+export const listTodos = (completed?: boolean) =>
+  apiClient.get<TodoSummary[]>(
+    completed === undefined ? '/todos' : `/todos?completed=${completed}`,
+  );
 export const getTodo = (id: string) => apiClient.get<TodoRead>(`/todos/${id}`);
 export const createTodo = (payload: TodoCreate) => apiClient.post<TodoRead>('/todos', payload);
 export const updateTodo = (id: string, payload: TodoUpdate) =>

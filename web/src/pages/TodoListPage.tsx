@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
@@ -8,12 +9,18 @@ import { listTodos, updateTodo } from '@/api/todos';
 import { formatEntryDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
 
+type TodoFilter = 'all' | 'pending' | 'completed';
+
+const TODO_FILTERS: TodoFilter[] = ['all', 'pending', 'completed'];
+
 export function TodoListPage() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<TodoFilter>('all');
+  const completed = filter === 'all' ? undefined : filter === 'completed';
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['todos'],
-    queryFn: listTodos,
+    queryKey: ['todos', filter],
+    queryFn: () => listTodos(completed),
   });
 
   const toggleMutation = useMutation({
@@ -33,11 +40,27 @@ export function TodoListPage() {
         </Button>
       </div>
 
+      <div className="flex gap-1">
+        {TODO_FILTERS.map((value) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={filter === value ? 'secondary' : 'ghost'}
+            aria-pressed={filter === value}
+            onClick={() => setFilter(value)}
+          >
+            {t(`todo.filter.${value}`)}
+          </Button>
+        ))}
+      </div>
+
       {isLoading && <p className="text-muted-foreground text-sm">{t('common.loading')}</p>}
       {isError && <p className="text-destructive text-sm">{t('common.genericError')}</p>}
 
       {data && data.length === 0 && (
-        <p className="text-muted-foreground text-sm">{t('todo.emptyState')}</p>
+        <p className="text-muted-foreground text-sm">
+          {t(filter === 'all' ? 'todo.emptyState' : 'todo.emptyStateFiltered')}
+        </p>
       )}
 
       {data && data.length > 0 && (
