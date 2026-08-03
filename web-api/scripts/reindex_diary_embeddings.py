@@ -39,7 +39,7 @@ def main() -> None:
     try:
         entry_ids = db.scalars(select(DiaryEntry.id)).all()
         for entry_id in entry_ids:
-            db.add(EmbeddingJob(diary_entry_id=entry_id))
+            db.add(EmbeddingJob(source_type="diary_entry", source_id=entry_id))
         db.commit()
         print(f"Enqueued {len(entry_ids)} embedding job(s)")
     finally:
