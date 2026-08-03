@@ -25,12 +25,12 @@ function stubFetchWithStream(chunks: string[], init: ResponseInit = { status: 20
 }
 
 function collectHandlers() {
-  const onCitations = vi.fn();
+  const onReferences = vi.fn();
   const onToken = vi.fn();
   const onDone = vi.fn();
   const onError = vi.fn();
-  const handlers: ChatStreamHandlers = { onCitations, onToken, onDone, onError };
-  return { handlers, onCitations, onToken, onDone, onError };
+  const handlers: ChatStreamHandlers = { onReferences, onToken, onDone, onError };
+  return { handlers, onReferences, onToken, onDone, onError };
 }
 
 afterEach(() => {
@@ -38,19 +38,21 @@ afterEach(() => {
 });
 
 describe('sendMessageStream', () => {
-  it('dispatches citations, then tokens, then done in order', async () => {
+  it('dispatches references, then tokens, then done in order', async () => {
     stubFetchWithStream([
-      'event: citations\ndata: {"citations":[{"diary_entry_id":"1","title":"A","entry_date":"2026-01-01"}]}\n\n',
+      'event: references\ndata: {"references":[{"source_type":"diary_entry","id":"1","title":"A","entry_date":"2026-01-01","completed":null}]}\n\n',
       'event: token\ndata: {"text":"Hello "}\n\n',
       'event: token\ndata: {"text":"world"}\n\n',
       'event: done\ndata: {"id":"msg-1","created_at":"2026-01-01T00:00:00Z"}\n\n',
     ]);
-    const { handlers, onCitations, onToken, onDone, onError } = collectHandlers();
+    const { handlers, onReferences, onToken, onDone, onError } = collectHandlers();
 
     await sendMessageStream('conv-1', 'hi', handlers);
 
-    expect(onCitations).toHaveBeenCalledWith({
-      citations: [{ diary_entry_id: '1', title: 'A', entry_date: '2026-01-01' }],
+    expect(onReferences).toHaveBeenCalledWith({
+      references: [
+        { source_type: 'diary_entry', id: '1', title: 'A', entry_date: '2026-01-01', completed: null },
+      ],
     });
     expect(onToken).toHaveBeenNthCalledWith(1, { text: 'Hello ' });
     expect(onToken).toHaveBeenNthCalledWith(2, { text: 'world' });
@@ -58,7 +60,7 @@ describe('sendMessageStream', () => {
     expect(onError).not.toHaveBeenCalled();
 
     const callOrder = [
-      ...onCitations.mock.invocationCallOrder,
+      ...onReferences.mock.invocationCallOrder,
       ...onToken.mock.invocationCallOrder,
       ...onDone.mock.invocationCallOrder,
     ];
@@ -94,13 +96,13 @@ describe('sendMessageStream', () => {
         }),
       ),
     );
-    const { handlers, onCitations, onToken, onDone, onError } = collectHandlers();
+    const { handlers, onReferences, onToken, onDone, onError } = collectHandlers();
 
     await expect(sendMessageStream('conv-1', 'hi', handlers)).rejects.toMatchObject({
       status: 400,
       detail: 'bad request',
     } satisfies Partial<ApiError>);
-    expect(onCitations).not.toHaveBeenCalled();
+    expect(onReferences).not.toHaveBeenCalled();
     expect(onToken).not.toHaveBeenCalled();
     expect(onDone).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();

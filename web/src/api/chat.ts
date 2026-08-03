@@ -1,7 +1,7 @@
 import type {
-  ChatCitationsEvent,
   ChatDoneEvent,
   ChatErrorEvent,
+  ChatReferencesEvent,
   ChatTokenEvent,
   SendMessageRequest,
 } from './types';
@@ -9,7 +9,7 @@ import { API_URL } from './client';
 import { ApiError } from './errors';
 
 export interface ChatStreamHandlers {
-  onCitations?: (event: ChatCitationsEvent) => void;
+  onReferences?: (event: ChatReferencesEvent) => void;
   onToken?: (event: ChatTokenEvent) => void;
   onDone?: (event: ChatDoneEvent) => void;
   onError?: (event: ChatErrorEvent) => void;
@@ -80,8 +80,8 @@ function dispatchBlock(rawBlock: string, handlers: ChatStreamHandlers): void {
 
   const payload = JSON.parse(dataLine);
   switch (eventName) {
-    case 'citations':
-      handlers.onCitations?.(payload as ChatCitationsEvent);
+    case 'references':
+      handlers.onReferences?.(payload as ChatReferencesEvent);
       break;
     case 'token':
       handlers.onToken?.(payload as ChatTokenEvent);

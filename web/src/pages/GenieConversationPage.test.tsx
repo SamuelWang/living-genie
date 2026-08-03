@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe('GenieConversationPage', () => {
-  it("renders an existing conversation's history with citations", async () => {
+  it("renders an existing conversation's history with references", async () => {
     mockGetConversation.mockResolvedValue(
       conversation({
         preview: 'What did I write yesterday?',
@@ -57,14 +57,22 @@ describe('GenieConversationPage', () => {
             role: 'user',
             content: 'What did I write yesterday?',
             created_at: '2026-01-01T00:00:00Z',
-            citations: [],
+            references: [],
           },
           {
             id: 'a1',
             role: 'assistant',
             content: 'You wrote about hiking.',
             created_at: '2026-01-01T00:00:01Z',
-            citations: [{ diary_entry_id: 'd1', title: 'Hiking day', entry_date: '2026-01-01' }],
+            references: [
+              {
+                source_type: 'diary_entry',
+                id: 'd1',
+                title: 'Hiking day',
+                entry_date: '2026-01-01',
+                completed: null,
+              },
+            ],
           },
         ],
       }),
@@ -74,8 +82,8 @@ describe('GenieConversationPage', () => {
 
     expect(await screen.findByText('What did I write yesterday?')).toBeInTheDocument();
     expect(await screen.findByText('You wrote about hiking.')).toBeInTheDocument();
-    const citationLink = screen.getByRole('link', { name: 'Hiking day' });
-    expect(citationLink).toHaveAttribute('href', '/diaries/d1');
+    const referenceLink = screen.getByRole('link', { name: 'Hiking day' });
+    expect(referenceLink).toHaveAttribute('href', '/diaries/d1');
   });
 
   it('streams a reply incrementally, then finalizes from the server', async () => {
@@ -86,13 +94,27 @@ describe('GenieConversationPage', () => {
         conversation({
           preview: 'hello',
           messages: [
-            { id: 'u1', role: 'user', content: 'hello', created_at: '2026-01-01T00:00:00Z', citations: [] },
+            {
+              id: 'u1',
+              role: 'user',
+              content: 'hello',
+              created_at: '2026-01-01T00:00:00Z',
+              references: [],
+            },
             {
               id: 'a1',
               role: 'assistant',
               content: 'Hello world',
               created_at: '2026-01-01T00:00:01Z',
-              citations: [{ diary_entry_id: 'd1', title: 'Hiking day', entry_date: '2026-01-01' }],
+              references: [
+                {
+                  source_type: 'diary_entry',
+                  id: 'd1',
+                  title: 'Hiking day',
+                  entry_date: '2026-01-01',
+                  completed: null,
+                },
+              ],
             },
           ],
         }),
@@ -104,8 +126,16 @@ describe('GenieConversationPage', () => {
     });
     mockSendMessageStream.mockImplementation(
       async (_conversationId: string, _content: string, handlers: ChatStreamHandlers) => {
-        handlers.onCitations?.({
-          citations: [{ diary_entry_id: 'd1', title: 'Hiking day', entry_date: '2026-01-01' }],
+        handlers.onReferences?.({
+          references: [
+            {
+              source_type: 'diary_entry',
+              id: 'd1',
+              title: 'Hiking day',
+              entry_date: '2026-01-01',
+              completed: null,
+            },
+          ],
         });
         handlers.onToken?.({ text: 'Hel' });
         await gate;

@@ -4,16 +4,20 @@ import { Link } from 'react-router';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { renderMarkdown } from '@/lib/markdown';
-import type { CitationRead } from '@/api/types';
+import type { MessageReference } from '@/api/types';
 
 interface ChatBubbleProps {
   role: 'user' | 'assistant';
   content: string;
-  citations?: CitationRead[];
+  references?: MessageReference[];
   streaming?: boolean;
 }
 
-export function ChatBubble({ role, content, citations = [], streaming = false }: ChatBubbleProps) {
+function referenceHref(reference: MessageReference): string {
+  return reference.source_type === 'todo' ? `/todos/${reference.id}` : `/diaries/${reference.id}`;
+}
+
+export function ChatBubble({ role, content, references = [], streaming = false }: ChatBubbleProps) {
   const { t } = useTranslation();
   const isUser = role === 'user';
 
@@ -34,17 +38,18 @@ export function ChatBubble({ role, content, citations = [], streaming = false }:
           />
         )}
         {streaming && <span className="animate-pulse">▍</span>}
-        {citations.length > 0 && (
+        {references.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            <span className="text-muted-foreground w-full text-xs">{t('genie.citationsLabel')}</span>
-            {citations.map((citation) => (
+            <span className="text-muted-foreground w-full text-xs">{t('genie.referencesLabel')}</span>
+            {references.map((reference) => (
               <Link
-                key={citation.diary_entry_id}
-                to={`/diaries/${citation.diary_entry_id}`}
+                key={reference.id}
+                to={referenceHref(reference)}
                 className="hover:bg-accent rounded-full border px-2 py-0.5 text-xs"
                 target="_blank"
               >
-                {citation.title ?? t('genie.citationDeleted')}
+                {reference.title ?? t('genie.referenceDeleted')}
+                {reference.source_type === 'todo' && reference.completed && ' ✓'}
               </Link>
             ))}
           </div>

@@ -11,7 +11,7 @@ import { ChatBubble } from '@/components/genie/ChatBubble';
 import { createConversation, getConversation } from '@/api/conversations';
 import { sendMessageStream } from '@/api/chat';
 import { ApiError } from '@/api/errors';
-import type { CitationRead, MessageRead } from '@/api/types';
+import type { MessageRead, MessageReference } from '@/api/types';
 
 function makeUserMessage(content: string): MessageRead {
   return {
@@ -19,7 +19,7 @@ function makeUserMessage(content: string): MessageRead {
     role: 'user',
     content,
     created_at: new Date().toISOString(),
-    citations: [],
+    references: [],
   };
 }
 
@@ -34,7 +34,7 @@ export function GenieConversationPage() {
   const [localMessages, setLocalMessages] = useState<MessageRead[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
-  const [streamCitations, setStreamCitations] = useState<CitationRead[]>([]);
+  const [streamReferences, setStreamReferences] = useState<MessageReference[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -54,17 +54,17 @@ export function GenieConversationPage() {
       setIsStreaming(true);
       setStreamError(null);
       setStreamText('');
-      setStreamCitations([]);
+      setStreamReferences([]);
 
       let accumulatedText = '';
-      let citations: CitationRead[] = [];
+      let references: MessageReference[] = [];
       let settled = false;
 
       try {
         await sendMessageStream(conversationId, content, {
-          onCitations: (event) => {
-            citations = event.citations;
-            setStreamCitations(event.citations);
+          onReferences: (event) => {
+            references = event.references;
+            setStreamReferences(event.references);
           },
           onToken: (event) => {
             accumulatedText += event.text;
@@ -92,14 +92,14 @@ export function GenieConversationPage() {
                   role: 'assistant',
                   content: accumulatedText,
                   created_at: event.created_at,
-                  citations,
+                  references,
                 };
                 setLocalMessages((prev) => [...prev, assistantMessage]);
               })
               .finally(() => {
                 setIsStreaming(false);
                 setStreamText('');
-                setStreamCitations([]);
+                setStreamReferences([]);
               });
             void queryClient.invalidateQueries({ queryKey: ['conversations'], exact: true });
           },
@@ -208,11 +208,11 @@ export function GenieConversationPage() {
               key={message.id}
               role={message.role}
               content={message.content}
-              citations={message.citations}
+              references={message.references}
             />
           ))}
           {isStreaming && (
-            <ChatBubble role="assistant" content={streamText} citations={streamCitations} streaming />
+            <ChatBubble role="assistant" content={streamText} references={streamReferences} streaming />
           )}
           <div ref={bottomRef} />
         </div>

@@ -38,6 +38,14 @@ export function RootLayout() {
                 {t('nav.diaries')}
               </NavLink>
               <NavLink
+                to="/todos"
+                className={({ isActive }) =>
+                  cn('text-sm font-medium hover:underline', isActive ? 'text-foreground font-semibold' : 'text-muted-foreground')
+                }
+              >
+                {t('nav.todos')}
+              </NavLink>
+              <NavLink
                 to="/genie"
                 className={({ isActive }) =>
                   cn('text-sm font-medium hover:underline', isActive ? 'text-foreground font-semibold' : 'text-muted-foreground')

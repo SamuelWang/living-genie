@@ -25,6 +25,36 @@ export interface DiaryEntrySummary {
   entry_date: string;
 }
 
+export interface TodoCreate {
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+}
+
+export interface TodoUpdate {
+  title?: string;
+  description?: string | null;
+  due_date?: string | null;
+  completed?: boolean;
+}
+
+export interface TodoRead {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TodoSummary {
+  id: string;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+}
+
 export interface UploadResponse {
   url: string;
 }
@@ -53,10 +83,12 @@ export interface ValidationErrorItem {
 
 export type ApiErrorDetail = string | ValidationErrorItem[];
 
-export interface CitationRead {
-  diary_entry_id: string;
+export interface MessageReference {
+  source_type: 'diary_entry' | 'todo';
+  id: string;
   title: string | null;
   entry_date: string | null;
+  completed: boolean | null;
 }
 
 export interface MessageRead {
@@ -64,7 +96,7 @@ export interface MessageRead {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
-  citations: CitationRead[];
+  references: MessageReference[];
 }
 
 export interface ConversationRead {
@@ -82,8 +114,8 @@ export interface SendMessageRequest {
   content: string;
 }
 
-export interface ChatCitationsEvent {
-  citations: CitationRead[];
+export interface ChatReferencesEvent {
+  references: MessageReference[];
 }
 
 export interface ChatTokenEvent {
