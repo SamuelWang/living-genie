@@ -26,7 +26,9 @@ def ensure_collection() -> None:
         return
     client.create_collection(
         collection_name=COLLECTION_NAME,
-        vectors_config=models.VectorParams(size=VECTOR_SIZE, distance=models.Distance.COSINE),
+        vectors_config=models.VectorParams(
+            size=VECTOR_SIZE, distance=models.Distance.COSINE, on_disk=True
+        ),
     )
     client.create_payload_index(
         collection_name=COLLECTION_NAME,
