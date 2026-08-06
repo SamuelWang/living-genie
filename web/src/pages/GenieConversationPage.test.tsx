@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Route, Routes } from 'react-router';
+import { Link, Route, Routes } from 'react-router';
 import { renderWithProviders } from '@/test/render';
 import { GenieConversationPage } from './GenieConversationPage';
 import { createConversation, getConversation } from '@/api/conversations';
@@ -24,6 +24,7 @@ Element.prototype.scrollIntoView = vi.fn();
 function renderAtRoute(route: string) {
   return renderWithProviders(
     <Routes>
+      <Route path="/genie" element={<Link to="/genie/conv-1">back to conv-1</Link>} />
       <Route path="/genie/new" element={<GenieConversationPage />} />
       <Route path="/genie/:id" element={<GenieConversationPage />} />
     </Routes>,
@@ -159,6 +160,84 @@ describe('GenieConversationPage', () => {
     expect(await screen.findByText('Hello world')).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Hiking day' })).toBeInTheDocument();
     await waitFor(() => expect(mockGetConversation).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps showing the loading bubble and a locked composer after navigating away and back mid-stream', async () => {
+    const user = userEvent.setup();
+    mockGetConversation
+      .mockResolvedValueOnce(conversation())
+      .mockResolvedValueOnce(
+        conversation({
+          messages: [
+            {
+              id: 'u1',
+              role: 'user',
+              content: 'hello',
+              created_at: '2026-01-01T00:00:00Z',
+              references: [],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        conversation({
+          preview: 'hello',
+          messages: [
+            {
+              id: 'u1',
+              role: 'user',
+              content: 'hello',
+              created_at: '2026-01-01T00:00:00Z',
+              references: [],
+            },
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: 'Hello world',
+              created_at: '2026-01-01T00:00:01Z',
+              references: [],
+            },
+          ],
+        }),
+      );
+
+    let resolveGate: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      resolveGate = resolve;
+    });
+    mockSendMessageStream.mockImplementation(
+      async (_conversationId: string, _content: string, handlers: ChatStreamHandlers) => {
+        handlers.onToken?.({ text: 'Hel' });
+        await gate;
+        handlers.onToken?.({ text: 'lo world' });
+        handlers.onDone?.({ id: 'a1', created_at: '2026-01-01T00:00:01Z' });
+      },
+    );
+
+    renderAtRoute('/genie/conv-1');
+
+    const textarea = await screen.findByPlaceholderText(COMPOSER_PLACEHOLDER);
+    await user.type(textarea, 'hello');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText('Hel')).toBeInTheDocument();
+    expect(screen.getByText('▍')).toBeInTheDocument();
+
+    // Navigate away to the list page (unmounts GenieConversationPage) while the stream is
+    // still gated open, then navigate back into the same conversation (remounts it).
+    await user.click(screen.getByRole('link', { name: 'Back to conversations' }));
+    await user.click(await screen.findByRole('link', { name: 'back to conv-1' }));
+
+    // Remounted page should still show the loading bubble and a locked composer, not a
+    // reset-to-idle state, even though the stream never sent anything after remount.
+    expect(await screen.findByText('Hel')).toBeInTheDocument();
+    expect(screen.getByText('▍')).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(COMPOSER_PLACEHOLDER)).toBeDisabled();
+
+    resolveGate();
+
+    expect(await screen.findByText('Hello world')).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(COMPOSER_PLACEHOLDER)).not.toBeDisabled();
   });
 
   it("keeps the user's message visible and shows an error on generation failure", async () => {

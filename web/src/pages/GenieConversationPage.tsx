@@ -23,6 +23,24 @@ function makeUserMessage(content: string): MessageRead {
   };
 }
 
+interface StreamState {
+  isStreaming: boolean;
+  streamText: string;
+  streamReferences: MessageReference[];
+  streamError: string | null;
+}
+
+const IDLE_STREAM_STATE: StreamState = {
+  isStreaming: false,
+  streamText: '',
+  streamReferences: [],
+  streamError: null,
+};
+
+function streamQueryKey(conversationId: string) {
+  return ['conversations', conversationId, 'stream'] as const;
+}
+
 export function GenieConversationPage() {
   const { id } = useParams<{ id?: string }>();
   const location = useLocation();
@@ -32,10 +50,8 @@ export function GenieConversationPage() {
 
   const [draft, setDraft] = useState('');
   const [localMessages, setLocalMessages] = useState<MessageRead[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamText, setStreamText] = useState('');
-  const [streamReferences, setStreamReferences] = useState<MessageReference[]>([]);
-  const [streamError, setStreamError] = useState<string | null>(null);
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const pendingHandledRef = useRef(false);
@@ -47,14 +63,33 @@ export function GenieConversationPage() {
     retry: false,
   });
 
+  // Streaming progress lives in the query cache (keyed by conversation id) rather than local
+  // state: the query client outlives this component, so if the user navigates away mid-reply and
+  // back, the in-flight stream (which keeps running in the background - see runSend) can keep
+  // updating this entry, and the remounted page picks the current progress back up instead of
+  // resetting to idle.
+  const streamQuery = useQuery({
+    queryKey: id ? streamQueryKey(id) : ['conversations', 'stream', 'idle'],
+    queryFn: () => IDLE_STREAM_STATE,
+    enabled: !!id,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+  const { isStreaming, streamText, streamReferences, streamError } =
+    streamQuery.data ?? IDLE_STREAM_STATE;
+
   const runSend = useCallback(
     async (conversationId: string, content: string) => {
+      const key = streamQueryKey(conversationId);
+      const patchStream = (patch: Partial<StreamState>) =>
+        queryClient.setQueryData<StreamState>(key, (prev) => ({
+          ...(prev ?? IDLE_STREAM_STATE),
+          ...patch,
+        }));
+
       const userMessage = makeUserMessage(content);
       setLocalMessages((prev) => [...prev, userMessage]);
-      setIsStreaming(true);
-      setStreamError(null);
-      setStreamText('');
-      setStreamReferences([]);
+      patchStream({ isStreaming: true, streamError: null, streamText: '', streamReferences: [] });
 
       let accumulatedText = '';
       let references: MessageReference[] = [];
@@ -64,11 +99,11 @@ export function GenieConversationPage() {
         await sendMessageStream(conversationId, content, {
           onReferences: (event) => {
             references = event.references;
-            setStreamReferences(event.references);
+            patchStream({ streamReferences: event.references });
           },
           onToken: (event) => {
             accumulatedText += event.text;
-            setStreamText(accumulatedText);
+            patchStream({ streamText: accumulatedText });
           },
           onDone: (event) => {
             settled = true;
@@ -97,28 +132,23 @@ export function GenieConversationPage() {
                 setLocalMessages((prev) => [...prev, assistantMessage]);
               })
               .finally(() => {
-                setIsStreaming(false);
-                setStreamText('');
-                setStreamReferences([]);
+                patchStream({ isStreaming: false, streamText: '', streamReferences: [] });
               });
             void queryClient.invalidateQueries({ queryKey: ['conversations'], exact: true });
           },
           onError: (event) => {
             settled = true;
-            setStreamError(event.message);
-            setIsStreaming(false);
+            patchStream({ streamError: event.message, isStreaming: false });
           },
         });
         // The connection can close (server crash, proxy timeout, network drop) without ever
         // sending a "done" or "error" event — don't leave the UI stuck showing "streaming"
         // forever in that case.
         if (!settled) {
-          setStreamError(t('common.genericError'));
-          setIsStreaming(false);
+          patchStream({ streamError: t('common.genericError'), isStreaming: false });
         }
       } catch {
-        setStreamError(t('common.genericError'));
-        setIsStreaming(false);
+        patchStream({ streamError: t('common.genericError'), isStreaming: false });
       }
     },
     [queryClient, t],
@@ -141,12 +171,12 @@ export function GenieConversationPage() {
 
   async function handleSend() {
     const content = draft.trim();
-    if (!content || isStreaming) return;
+    if (!content || isStreaming || isCreatingConversation) return;
     setDraft('');
-    setStreamError(null);
+    setCreateError(null);
 
     if (!id) {
-      setIsStreaming(true);
+      setIsCreatingConversation(true);
       try {
         const conversation = await createConversation();
         void navigate(`/genie/${conversation.id}`, {
@@ -154,8 +184,8 @@ export function GenieConversationPage() {
           state: { pendingMessage: content },
         });
       } catch {
-        setStreamError(t('common.genericError'));
-        setIsStreaming(false);
+        setCreateError(t('common.genericError'));
+        setIsCreatingConversation(false);
       }
       return;
     }
@@ -221,9 +251,9 @@ export function GenieConversationPage() {
       {isStreaming && !streamText && (
         <p className="text-muted-foreground text-sm">{t('genie.streamingIndicator')}</p>
       )}
-      {streamError && (
+      {(streamError ?? createError) && (
         <p role="alert" className="text-destructive text-sm">
-          {streamError}
+          {streamError ?? createError}
         </p>
       )}
 
@@ -233,10 +263,13 @@ export function GenieConversationPage() {
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('genie.composerPlaceholder')}
-          disabled={isStreaming}
+          disabled={isStreaming || isCreatingConversation}
           className="flex-1"
         />
-        <Button onClick={() => void handleSend()} disabled={isStreaming || !draft.trim()}>
+        <Button
+          onClick={() => void handleSend()}
+          disabled={isStreaming || isCreatingConversation || !draft.trim()}
+        >
           {t('genie.sendButton')}
         </Button>
       </div>
