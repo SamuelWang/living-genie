@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     chat_tool_max_iterations: int = 4
     ollama_chat_temperature: float = 0.9
     ollama_chat_repeat_penalty: float = 1.3
+    ollama_chat_think: bool = True
 
 
 @lru_cache

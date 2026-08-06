@@ -171,7 +171,7 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
 
 - **Local inference**: an `ollama` service serves both embedding and chat generation; model tags
   are configurable via `OLLAMA_EMBEDDING_MODEL` (default `embeddinggemma:300m`) and
-  `OLLAMA_CHAT_MODEL` (default `gemma3:4b`) environment variables. Both are non-China-origin,
+  `OLLAMA_CHAT_MODEL` (default `gemma4:e2b-it-qat`) environment variables. Both are non-China-origin,
   open-weight models that run CPU-only if needed, though interactive-latency chat generation
   benefits substantially from GPU acceleration — the `ollama` service requests an NVIDIA GPU via
   Docker Compose's `deploy.resources.reservations.devices` (falls back to CPU automatically if
@@ -180,11 +180,16 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   matters since diary content is expected to be mostly Traditional Chinese; it's pulled from
   Ollama's official library. Its query/document prompts follow EmbeddingGemma's own convention
   (`task: search result | query: ...` / `title: none | text: ...`) prefixes — 
-  see `embed_texts()` in `web-api/app/embeddings.py`. `gemma3` (Google) was chosen for chat
-  generation for its license permissiveness and multilingual coverage — `gemma2:9b` was the
-  original pin, but proved too large to load in reasonable time on modest/CPU-only hardware;
-  `gemma3:4b` is the smaller replacement. Models are pulled on first startup via a one-shot
-  init step (a short-lived service running `ollama pull` against the `ollama` service, exiting once done).
+  see `embed_texts()` in `web-api/app/embeddings.py`. `gemma3:4b` (Google) was the original chat
+  pin, chosen for license permissiveness and multilingual coverage after `gemma2:9b` proved too
+  large to load in reasonable time on modest/CPU-only hardware — but `gemma3:4b` doesn't support
+  Ollama's `tools` capability, which the tool-calling design below depends on. `gemma4:e2b-it-qat`
+  replaces it: `ollama show gemma4:e2b-it-qat` confirms native `tools` and `thinking` capabilities,
+  and a manual evaluation (per
+  [Ollama model evaluation](ollama-model-evaluation.md)) found acceptable warm-call latency and
+  fluent bilingual (English/Traditional Chinese) output on this project's hardware. Models are
+  pulled on first startup via a one-shot init step (a short-lived service running `ollama pull`
+  against the `ollama` service, exiting once done).
 
 - **Chunking**: on diary entry or todo create/update (including toggling a todo's `completed`
   flag, since that changes its embedded text), `web-api` enqueues a row in `embedding_jobs` with
@@ -312,11 +317,19 @@ clickable link the user can use to quickly verify what happened.
 `build_system_prompt()` gains todos as a third in-scope topic (alongside diary excerpts and
 app-help content) plus the confirm-before-acting instruction above.
 
-**Open risk**: whether the configured chat model (`gemma3:4b`) reliably supports and follows
-Ollama's tool-calling conventions — including the confirm-before-acting instruction — is
-unverified as of this writing. This should be validated during implementation using the existing
-[Ollama model evaluation](ollama-model-evaluation.md) procedure; re-pinning `OLLAMA_CHAT_MODEL` is
-the fallback if it proves unreliable.
+**Resolved risk, with a residual caveat**: whether the chat model reliably supports and follows
+Ollama's tool-calling conventions — including the confirm-before-acting instruction — was an open,
+unverified risk for `gemma3:4b`, which doesn't support Ollama's `tools` capability at all.
+`OLLAMA_CHAT_MODEL` was re-pinned to `gemma4:e2b-it-qat`, which `ollama show` confirms natively
+supports both `tools` and `thinking`. Live end-to-end testing (see
+[execution plan, Section 10](execution/v0.3.0.md)) found the mechanical `user_confirmed` gate
+itself is sound — no todo was ever mutated without prior confirmation — but at the model card's
+generically recommended sampling temperature (1.0), the assistant would sometimes skip asking for
+confirmation and reply with a flat, false claim that an action had already succeeded. Lowering
+`OLLAMA_CHAT_TEMPERATURE` to 0.3 measurably reduced this in testing (0/8 vs. 1/5 trials), but did
+not mathematically guarantee it can't recur — this is a UX/trust risk (a misleading reply), not a
+data-safety one, since no unconfirmed mutation can occur regardless. Worth continued monitoring in
+real usage.
 
 ## Data model
 

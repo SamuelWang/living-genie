@@ -100,6 +100,7 @@ def run_chat_with_tools(
             messages=messages,
             tools=TODO_TOOLS,
             stream=False,
+            think=settings.ollama_chat_think,
             options=options,
         )
         message = response.message
@@ -144,6 +145,7 @@ def run_chat_with_tools(
             model=settings.ollama_chat_model,
             messages=messages,
             stream=True,
+            think=settings.ollama_chat_think,
             options=options,
         )
         for chunk in stream:

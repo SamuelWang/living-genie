@@ -35,6 +35,23 @@ def test_process_next_job_pending_to_completed(
     assert len(stored) >= 1
 
 
+def test_process_next_job_embeds_title_only_diary_entry(
+    authed_user: AuthedUser, db_session: Session, fake_vector_store, fake_ollama_client
+):
+    create_resp = authed_user.client.post("/diaries", json={"title": "洗牙", "content": ""})
+    entry_id = uuid.UUID(create_resp.json()["id"])
+    job = _job_for_entry(db_session, entry_id)
+    assert job.status == "pending"
+
+    result = worker.process_next_job(db_session)
+
+    assert result is True
+    assert job.status == "completed"
+    stored = [point for point in fake_vector_store.points.values() if point["source_id"] == str(entry_id)]
+    assert len(stored) >= 1
+    assert any("洗牙" in point["chunk_text"] for point in stored)
+
+
 def test_process_next_job_returns_false_when_no_pending_job(db_session: Session):
     assert worker.process_next_job(db_session) is False
 

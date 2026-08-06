@@ -284,6 +284,7 @@ class FakeOllamaClient:
         messages: list[dict],
         stream: bool = True,
         tools: list[dict] | None = None,
+        think: bool | str | None = None,
         options: dict | None = None,
     ):
         if self.raise_on_chat:

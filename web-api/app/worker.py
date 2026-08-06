@@ -49,8 +49,9 @@ def process_next_job(db: Session) -> bool:
     settings = get_settings()
     try:
         if job.source_type == "diary_entry":
+            composed = f"{source.title}\n\n{source.content}" if source.content else source.title
             chunks = chunk_text(
-                source.content, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+                composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
             )
             source_date = source.entry_date
         else:
