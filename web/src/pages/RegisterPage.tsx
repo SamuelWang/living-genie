@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { register } from '@/api/auth';
 import { ApiError } from '@/api/errors';
+import { toast } from '@/lib/toast';
 
 const PASSWORD_MIN_LENGTH = 8;
 
@@ -33,13 +34,17 @@ export function RegisterPage() {
     registerMutation.mutate(
       { email, password },
       {
-        onSuccess: () => navigate('/login', { replace: true }),
+        onSuccess: () => {
+          toast.success(t('auth.registerSuccess'));
+          void navigate('/login', { replace: true });
+        },
         onError: (err) => {
-          if (err instanceof ApiError && err.status === 409) {
-            setFormError(t('auth.registerDuplicateEmail'));
-          } else {
-            setFormError(t('common.genericError'));
-          }
+          const message =
+            err instanceof ApiError && err.status === 409
+              ? t('auth.registerDuplicateEmail')
+              : t('common.genericError');
+          setFormError(message);
+          toast.error(message);
         },
       },
     );

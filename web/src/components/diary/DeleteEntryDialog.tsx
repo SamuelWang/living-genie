@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { deleteDiaryEntry } from '@/api/diaries';
+import { toast } from '@/lib/toast';
 
 interface DeleteEntryDialogProps {
   entryId: string;
@@ -31,8 +32,10 @@ export function DeleteEntryDialog({ entryId, entryTitle, onDeleted }: DeleteEntr
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['diaries'] });
       setOpen(false);
+      toast.success(t('diary.deleteSuccess'));
       onDeleted?.();
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   return (

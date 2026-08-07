@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DiaryEntryForm, type DiaryEntryFormValues } from '@/components/diary/DiaryEntryForm';
 import { getDiaryEntry, updateDiaryEntry } from '@/api/diaries';
 import { ApiError } from '@/api/errors';
+import { toast } from '@/lib/toast';
 
 export function DiaryEditPage() {
   const { t } = useTranslation();
@@ -28,8 +29,10 @@ export function DiaryEditPage() {
     onSuccess: (updatedEntry) => {
       queryClient.setQueryData(['diaries', id], updatedEntry);
       void queryClient.invalidateQueries({ queryKey: ['diaries'] });
+      toast.success(t('diary.updateSuccess'));
       void navigate(`/diaries/${id}`);
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   if (isLoading) {

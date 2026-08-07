@@ -17,7 +17,9 @@
     "loginSubmit": "Log in",
     "invalidCredentials": "Incorrect email or password",
     "registerNoAccount": "Don't have an account?",
-    "registerLink": "Register"
+    "registerLink": "Register",
+    "loginSuccess": "Logged in successfully",
+    "registerSuccess": "Account created successfully"
   },
   "diary": {
     "listTitle": "Diary Entries",
@@ -39,7 +41,10 @@
     "deleteButton": "Delete",
     "deleteConfirmTitle": "Delete diary entry?",
     "deleteConfirmDescription": "This will permanently delete \"{{title}}\". This cannot be undone.",
-    "deleteConfirmAction": "Delete"
+    "deleteConfirmAction": "Delete",
+    "createSuccess": "Diary entry created",
+    "updateSuccess": "Diary entry updated",
+    "deleteSuccess": "Diary entry deleted"
   },
   "todo": {
     "listTitle": "Todos",
@@ -67,7 +72,10 @@
     "deleteConfirmTitle": "Delete todo?",
     "deleteConfirmDescription": "This will permanently delete \"{{title}}\". This cannot be undone.",
     "deleteConfirmAction": "Delete",
-    "completedLabel": "Completed"
+    "completedLabel": "Completed",
+    "createSuccess": "Todo created",
+    "updateSuccess": "Todo updated",
+    "deleteSuccess": "Todo deleted"
   },
   "genie": {
     "listTitle": "Genie",
@@ -84,7 +92,8 @@
     "deleteButton": "Delete",
     "deleteConfirmTitle": "Delete conversation?",
     "deleteConfirmDescription": "This will permanently delete \"{{preview}}\". This cannot be undone.",
-    "deleteConfirmAction": "Delete"
+    "deleteConfirmAction": "Delete",
+    "deleteSuccess": "Conversation deleted"
   },
   "editor": {
     "uploadError": "Failed to upload image. Please try again.",

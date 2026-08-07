@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router';
 
 import { DiaryEntryForm, type DiaryEntryFormValues } from '@/components/diary/DiaryEntryForm';
 import { createDiaryEntry } from '@/api/diaries';
+import { toast } from '@/lib/toast';
 
 export function DiaryCreatePage() {
   const { t } = useTranslation();
@@ -14,8 +15,10 @@ export function DiaryCreatePage() {
     mutationFn: createDiaryEntry,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['diaries'] });
+      toast.success(t('diary.createSuccess'));
       void navigate('/diaries');
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   const handleSubmit = (values: DiaryEntryFormValues) => {

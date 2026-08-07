@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TodoForm, type TodoFormValues } from '@/components/todo/TodoForm';
 import { getTodo, updateTodo } from '@/api/todos';
 import { ApiError } from '@/api/errors';
+import { toast } from '@/lib/toast';
 
 export function TodoEditPage() {
   const { t } = useTranslation();
@@ -28,8 +29,10 @@ export function TodoEditPage() {
     onSuccess: (updatedTodo) => {
       queryClient.setQueryData(['todos', id], updatedTodo);
       void queryClient.invalidateQueries({ queryKey: ['todos'] });
+      toast.success(t('todo.updateSuccess'));
       void navigate(`/todos/${id}`);
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   if (isLoading) {

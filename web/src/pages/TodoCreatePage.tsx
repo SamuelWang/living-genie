@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router';
 
 import { TodoForm, type TodoFormValues } from '@/components/todo/TodoForm';
 import { createTodo } from '@/api/todos';
+import { toast } from '@/lib/toast';
 
 export function TodoCreatePage() {
   const { t } = useTranslation();
@@ -14,8 +15,10 @@ export function TodoCreatePage() {
     mutationFn: createTodo,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['todos'] });
+      toast.success(t('todo.createSuccess'));
       void navigate('/todos');
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   const handleSubmit = (values: TodoFormValues) => {

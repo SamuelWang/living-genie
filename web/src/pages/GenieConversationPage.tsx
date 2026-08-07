@@ -12,6 +12,7 @@ import { createConversation, getConversation } from '@/api/conversations';
 import { sendMessageStream } from '@/api/chat';
 import { ApiError } from '@/api/errors';
 import type { MessageRead, MessageReference } from '@/api/types';
+import { toast } from '@/lib/toast';
 
 function makeUserMessage(content: string): MessageRead {
   return {
@@ -185,6 +186,7 @@ export function GenieConversationPage() {
         });
       } catch {
         setCreateError(t('common.genericError'));
+        toast.error(t('common.genericError'));
         setIsCreatingConversation(false);
       }
       return;

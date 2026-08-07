@@ -17,7 +17,9 @@
     "loginSubmit": "登入",
     "invalidCredentials": "電子郵件或密碼錯誤",
     "registerNoAccount": "還沒有帳號？",
-    "registerLink": "註冊"
+    "registerLink": "註冊",
+    "loginSuccess": "登入成功",
+    "registerSuccess": "帳號建立成功"
   },
   "diary": {
     "listTitle": "日記列表",
@@ -39,7 +41,10 @@
     "deleteButton": "刪除",
     "deleteConfirmTitle": "刪除日記？",
     "deleteConfirmDescription": "此動作將永久刪除「{{title}}」，且無法復原。",
-    "deleteConfirmAction": "刪除"
+    "deleteConfirmAction": "刪除",
+    "createSuccess": "日記已新增",
+    "updateSuccess": "日記已更新",
+    "deleteSuccess": "日記已刪除"
   },
   "todo": {
     "listTitle": "待辦事項",
@@ -67,7 +72,10 @@
     "deleteConfirmTitle": "刪除待辦事項？",
     "deleteConfirmDescription": "此動作將永久刪除「{{title}}」，且無法復原。",
     "deleteConfirmAction": "刪除",
-    "completedLabel": "已完成"
+    "completedLabel": "已完成",
+    "createSuccess": "待辦事項已新增",
+    "updateSuccess": "待辦事項已更新",
+    "deleteSuccess": "待辦事項已刪除"
   },
   "genie": {
     "listTitle": "精靈",
@@ -84,7 +92,8 @@
     "deleteButton": "刪除",
     "deleteConfirmTitle": "刪除對話？",
     "deleteConfirmDescription": "此動作將永久刪除「{{preview}}」，且無法復原。",
-    "deleteConfirmAction": "刪除"
+    "deleteConfirmAction": "刪除",
+    "deleteSuccess": "對話已刪除"
   },
   "editor": {
     "uploadError": "圖片上傳失敗，請再試一次。",

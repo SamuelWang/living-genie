@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { deleteTodo } from '@/api/todos';
+import { toast } from '@/lib/toast';
 
 interface DeleteTodoDialogProps {
   todoId: string;
@@ -31,8 +32,10 @@ export function DeleteTodoDialog({ todoId, todoTitle, onDeleted }: DeleteTodoDia
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['todos'] });
       setOpen(false);
+      toast.success(t('todo.deleteSuccess'));
       onDeleted?.();
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   return (

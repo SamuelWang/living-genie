@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { ApiError } from '@/api/errors';
+import { toast } from '@/lib/toast';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -32,13 +33,17 @@ export function LoginPage() {
     loginMutation.mutate(
       { email, password },
       {
-        onSuccess: () => navigate('/diaries', { replace: true }),
+        onSuccess: () => {
+          toast.success(t('auth.loginSuccess'));
+          void navigate('/diaries', { replace: true });
+        },
         onError: (err) => {
-          if (err instanceof ApiError && err.status === 401) {
-            setFormError(t('auth.invalidCredentials'));
-          } else {
-            setFormError(t('common.genericError'));
-          }
+          const message =
+            err instanceof ApiError && err.status === 401
+              ? t('auth.invalidCredentials')
+              : t('common.genericError');
+          setFormError(message);
+          toast.error(message);
         },
       },
     );

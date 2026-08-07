@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { deleteConversation } from '@/api/conversations';
+import { toast } from '@/lib/toast';
 
 interface DeleteConversationDialogProps {
   conversationId: string;
@@ -36,8 +37,10 @@ export function DeleteConversationDialog({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] });
       setOpen(false);
+      toast.success(t('genie.deleteSuccess'));
       onDeleted?.();
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   return (

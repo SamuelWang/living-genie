@@ -8,6 +8,7 @@ import { DeleteTodoDialog } from '@/components/todo/DeleteTodoDialog';
 import { getTodo, updateTodo } from '@/api/todos';
 import { ApiError } from '@/api/errors';
 import { formatEntryDate } from '@/lib/date';
+import { toast } from '@/lib/toast';
 
 export function TodoDetailPage() {
   const { t, i18n } = useTranslation();
@@ -30,7 +31,9 @@ export function TodoDetailPage() {
     mutationFn: (completed: boolean) => updateTodo(id!, { completed }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['todos'] });
+      toast.success(t('todo.updateSuccess'));
     },
+    onError: () => toast.error(t('common.genericError')),
   });
 
   if (isLoading) {
