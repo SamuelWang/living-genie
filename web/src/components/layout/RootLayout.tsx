@@ -23,7 +23,7 @@ export function RootLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between border-b p-4">
         <div className="flex items-center gap-6">
           <span className="font-semibold">{t('app.name')}</span>
@@ -65,7 +65,7 @@ export function RootLayout() {
           )}
         </div>
       </header>
-      <main className="p-4">
+      <main className="flex-1 min-h-0 overflow-y-auto p-4">
         <Outlet />
       </main>
     </div>

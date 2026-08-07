@@ -226,12 +226,12 @@ export function GenieConversationPage() {
   const allMessages = [...(conversationQuery.data?.messages ?? []), ...localMessages];
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-3">
+    <div className="flex h-full flex-col gap-3">
       <Link to="/genie" className="text-primary self-start text-sm underline underline-offset-4">
         {t('genie.backToList')}
       </Link>
 
-      <ScrollArea className="flex-1 rounded-md border p-4">
+      <ScrollArea className="flex-1 min-h-0 rounded-md border p-4">
         <div className="flex flex-col gap-3">
           {allMessages.map((message) => (
             <ChatBubble
