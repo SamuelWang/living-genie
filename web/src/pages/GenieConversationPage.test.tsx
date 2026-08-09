@@ -16,7 +16,7 @@ const mockGetConversation = vi.mocked(getConversation);
 const mockCreateConversation = vi.mocked(createConversation);
 const mockSendMessageStream = vi.mocked(sendMessageStream);
 
-const COMPOSER_PLACEHOLDER = 'Ask Genie about your diary…';
+const COMPOSER_PLACEHOLDER = 'Ask Genie about your diary or todos…';
 
 // jsdom doesn't implement scrollIntoView; the page calls it on every message-list update.
 Element.prototype.scrollIntoView = vi.fn();
@@ -85,6 +85,63 @@ describe('GenieConversationPage', () => {
     expect(await screen.findByText('You wrote about hiking.')).toBeInTheDocument();
     const referenceLink = screen.getByRole('link', { name: 'Hiking day' });
     expect(referenceLink).toHaveAttribute('href', '/diaries/d1');
+  });
+
+  it('renders a mixed diary/todo reference list with the todo completed checkmark', async () => {
+    mockGetConversation.mockResolvedValue(
+      conversation({
+        preview: 'What should I do today?',
+        messages: [
+          {
+            id: 'u1',
+            role: 'user',
+            content: 'What should I do today?',
+            created_at: '2026-01-01T00:00:00Z',
+            references: [],
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'Here is what I found.',
+            created_at: '2026-01-01T00:00:01Z',
+            references: [
+              {
+                source_type: 'diary_entry',
+                id: 'd1',
+                title: 'Hiking day',
+                entry_date: '2026-01-01',
+                completed: null,
+              },
+              {
+                source_type: 'todo',
+                id: 't1',
+                title: 'Buy groceries',
+                entry_date: null,
+                completed: true,
+              },
+              {
+                source_type: 'todo',
+                id: 't2',
+                title: 'Call the dentist',
+                entry_date: null,
+                completed: false,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    renderAtRoute('/genie/conv-1');
+
+    const diaryLink = await screen.findByRole('link', { name: 'Hiking day' });
+    expect(diaryLink).toHaveAttribute('href', '/diaries/d1');
+
+    const completedTodoLink = screen.getByRole('link', { name: 'Buy groceries ✓' });
+    expect(completedTodoLink).toHaveAttribute('href', '/todos/t1');
+
+    const pendingTodoLink = screen.getByRole('link', { name: 'Call the dentist' });
+    expect(pendingTodoLink).toHaveAttribute('href', '/todos/t2');
   });
 
   it('streams a reply incrementally, then finalizes from the server', async () => {

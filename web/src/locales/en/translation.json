@@ -82,7 +82,7 @@
     "newChatButton": "New chat",
     "emptyState": "No conversations yet.",
     "noPreview": "New conversation",
-    "composerPlaceholder": "Ask Genie about your diary…",
+    "composerPlaceholder": "Ask Genie about your diary or todos…",
     "sendButton": "Send",
     "streamingIndicator": "Genie is thinking…",
     "referencesLabel": "Sources",

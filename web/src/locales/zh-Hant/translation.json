@@ -82,7 +82,7 @@
     "newChatButton": "開始新對話",
     "emptyState": "目前還沒有對話。",
     "noPreview": "新對話",
-    "composerPlaceholder": "向精靈詢問你的日記…",
+    "composerPlaceholder": "向精靈詢問你的日記或待辦事項…",
     "sendButton": "傳送",
     "streamingIndicator": "精靈思考中…",
     "referencesLabel": "資料來源",

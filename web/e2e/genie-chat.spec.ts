@@ -22,13 +22,13 @@ test('ask Genie about a diary entry, get a grounded reply with a citation, then 
   await page.waitForURL(/\/diaries\/[^/]+$/);
   const diaryEntryId = page.url().split('/').pop()!;
 
-  await waitForIndexing(diaryEntryId);
+  await waitForIndexing('diary_entry', diaryEntryId);
 
   await page.goto('/genie');
   await page.getByRole('button', { name: 'New chat' }).click();
 
   const question = 'Where did I go hiking recently, and what did I see there?';
-  await page.getByPlaceholder('Ask Genie about your diary…').fill(question);
+  await page.getByPlaceholder('Ask Genie about your diary or todos…').fill(question);
   await page.getByRole('button', { name: 'Send' }).click();
 
   await page.waitForURL(/\/genie\/[^/]+$/);

@@ -17,19 +17,25 @@ const QDRANT_URL = process.env.E2E_QDRANT_URL ?? 'http://localhost:6333';
 
 /**
  * Polls Qdrant directly (rather than the chat endpoint, where an empty-retrieval answer is also
- * a valid 200 response) for the worker to have indexed a diary entry.
+ * a valid 200 response) for the worker to have indexed a diary entry or todo.
  */
 export async function waitForIndexing(
-  diaryEntryId: string,
+  sourceType: 'diary_entry' | 'todo',
+  sourceId: string,
   { timeoutMs = 60_000, intervalMs = 1_000 } = {},
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const res = await fetch(`${QDRANT_URL}/collections/diary_chunks/points/scroll`, {
+    const res = await fetch(`${QDRANT_URL}/collections/entry_chunks/points/scroll`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        filter: { must: [{ key: 'diary_entry_id', match: { value: diaryEntryId } }] },
+        filter: {
+          must: [
+            { key: 'source_type', match: { value: sourceType } },
+            { key: 'source_id', match: { value: sourceId } },
+          ],
+        },
         limit: 1,
       }),
     });
@@ -39,5 +45,5 @@ export async function waitForIndexing(
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
-  throw new Error(`Timed out waiting for diary entry ${diaryEntryId} to be indexed in Qdrant`);
+  throw new Error(`Timed out waiting for ${sourceType} ${sourceId} to be indexed in Qdrant`);
 }
