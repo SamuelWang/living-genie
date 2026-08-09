@@ -1,11 +1,18 @@
+import io
+
+from PIL import Image
+
 from app.settings import get_settings
 from tests.conftest import AuthedUser
 
 
 def _upload_image(authed_user: AuthedUser) -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (100, 150, 200)).save(buf, format="PNG")
+
     resp = authed_user.client.post(
         "/uploads/images",
-        files={"file": ("photo.png", b"\x89PNG-fake-bytes", "image/png")},
+        files={"file": ("photo.png", buf.getvalue(), "image/png")},
     )
     assert resp.status_code == 201, resp.text
     return resp.json()["url"]

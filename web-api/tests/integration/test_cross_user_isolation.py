@@ -1,3 +1,7 @@
+import io
+
+from PIL import Image
+
 from tests.conftest import AuthedUser
 
 
@@ -39,9 +43,12 @@ def test_user_a_list_excludes_user_b_entries(authed_user: AuthedUser, other_user
 
 
 def test_user_a_cannot_fetch_user_b_media_404(authed_user: AuthedUser, other_user: AuthedUser):
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (10, 20, 30)).save(buf, format="PNG")
+
     upload_resp = other_user.client.post(
         "/uploads/images",
-        files={"file": ("photo.png", b"b-owns-this", "image/png")},
+        files={"file": ("photo.png", buf.getvalue(), "image/png")},
     )
     url = upload_resp.json()["url"]
 
