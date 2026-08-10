@@ -1,9 +1,10 @@
+import difflib
 import logging
 import uuid
 from datetime import date
 from typing import Any, Callable
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import EmbeddingJob, Todo
@@ -51,6 +52,13 @@ TODO_TOOLS: list[dict] = [
                         "type": "string",
                         "description": "Current title identifying the todo.",
                     },
+                    "due_date": {
+                        "type": "string",
+                        "description": (
+                            "Optional current due date (YYYY-MM-DD) of the todo being changed, "
+                            "used to tell it apart from other todos sharing the same title."
+                        ),
+                    },
                     "new_title": {"type": "string"},
                     "new_description": {"type": "string"},
                     "new_due_date": {"type": "string", "description": "YYYY-MM-DD"},
@@ -69,6 +77,13 @@ TODO_TOOLS: list[dict] = [
                 "required": ["title", "user_confirmed"],
                 "properties": {
                     "title": {"type": "string"},
+                    "due_date": {
+                        "type": "string",
+                        "description": (
+                            "Optional due date (YYYY-MM-DD) of the todo, used to tell it apart "
+                            "from other todos sharing the same title."
+                        ),
+                    },
                     "user_confirmed": {"type": "boolean"},
                 },
             },
@@ -84,6 +99,13 @@ TODO_TOOLS: list[dict] = [
                 "required": ["title", "user_confirmed"],
                 "properties": {
                     "title": {"type": "string"},
+                    "due_date": {
+                        "type": "string",
+                        "description": (
+                            "Optional due date (YYYY-MM-DD) of the todo, used to tell it apart "
+                            "from other todos sharing the same title."
+                        ),
+                    },
                     "user_confirmed": {"type": "boolean"},
                 },
             },
@@ -93,11 +115,15 @@ TODO_TOOLS: list[dict] = [
 
 _NEEDS_CONFIRMATION: dict = {
     "ok": False,
+    "reason": "needs_confirmation",
     "message": (
         "Not performed: ask the user to confirm this exact change first, then call again "
         "with user_confirmed=true."
     ),
 }
+
+_FUZZY_MATCH_THRESHOLD = 0.6
+_FUZZY_MATCH_MARGIN = 0.15
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -109,25 +135,64 @@ def _parse_date(value: str | None) -> date | None:
         return None
 
 
-def _find_todo_by_title(db: Session, user_id: uuid.UUID, title: str) -> Todo | dict:
-    matches = list(
-        db.scalars(
-            select(Todo).where(
-                Todo.user_id == user_id, func.lower(Todo.title) == title.strip().lower()
-            )
-        )
-    )
-    if not matches:
-        return {"ok": False, "message": f"No todo found with title '{title}'."}
-    if len(matches) > 1:
+def _title_similarity(search: str, candidate: str) -> float:
+    if search == candidate:
+        return 1.0
+    if search in candidate or candidate in search:
+        return 0.9
+    return difflib.SequenceMatcher(None, search, candidate).ratio()
+
+
+def _ambiguous_error(title: str, due_date: date | None) -> dict:
+    if due_date is not None:
+        hint = "ask the user for more distinguishing detail (e.g. the description) before proceeding"
+    else:
+        hint = "ask the user for the due date (or other distinguishing detail) before proceeding"
+    return {
+        "ok": False,
+        "message": f"Multiple todos could match '{title}'; {hint}.",
+    }
+
+
+def _not_found_error(title: str, due_date: date | None) -> dict:
+    if due_date is not None:
         return {
             "ok": False,
-            "message": (
-                f"Multiple todos are titled '{title}'; ask the user which one they mean "
-                "(e.g. by due date or description) before proceeding."
-            ),
+            "message": f"No todo found with title '{title}' due {due_date.isoformat()}.",
         }
-    return matches[0]
+    return {"ok": False, "message": f"No todo found with title '{title}'."}
+
+
+def _find_todo_by_title(
+    db: Session, user_id: uuid.UUID, title: str, due_date: str | None = None
+) -> Todo | dict:
+    search = title.strip().lower()
+    parsed_due_date = _parse_date(due_date)
+    candidates = list(db.scalars(select(Todo).where(Todo.user_id == user_id)))
+    if parsed_due_date is not None:
+        candidates = [t for t in candidates if t.due_date == parsed_due_date]
+    if not candidates:
+        return _not_found_error(title, parsed_due_date)
+
+    exact = [t for t in candidates if t.title.strip().lower() == search]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return _ambiguous_error(title, parsed_due_date)
+
+    scored = sorted(
+        candidates,
+        key=lambda t: _title_similarity(search, t.title.strip().lower()),
+        reverse=True,
+    )
+    best_score = _title_similarity(search, scored[0].title.strip().lower())
+    if best_score < _FUZZY_MATCH_THRESHOLD:
+        return _not_found_error(title, parsed_due_date)
+    if len(scored) > 1:
+        second_score = _title_similarity(search, scored[1].title.strip().lower())
+        if second_score >= best_score - _FUZZY_MATCH_MARGIN:
+            return _ambiguous_error(title, parsed_due_date)
+    return scored[0]
 
 
 def _enqueue_reindex(db: Session, todo: Todo) -> None:
@@ -159,6 +224,7 @@ def update_todo(
     db: Session,
     user_id: uuid.UUID,
     title: str,
+    due_date: str | None = None,
     new_title: str | None = None,
     new_description: str | None = None,
     new_due_date: str | None = None,
@@ -166,7 +232,7 @@ def update_todo(
 ) -> dict:
     if user_confirmed is not True:
         return _NEEDS_CONFIRMATION
-    found = _find_todo_by_title(db, user_id, title)
+    found = _find_todo_by_title(db, user_id, title, due_date)
     if isinstance(found, dict):
         return found
     todo = found
@@ -183,11 +249,15 @@ def update_todo(
 
 
 def complete_todo(
-    db: Session, user_id: uuid.UUID, title: str, user_confirmed: bool = False
+    db: Session,
+    user_id: uuid.UUID,
+    title: str,
+    due_date: str | None = None,
+    user_confirmed: bool = False,
 ) -> dict:
     if user_confirmed is not True:
         return _NEEDS_CONFIRMATION
-    found = _find_todo_by_title(db, user_id, title)
+    found = _find_todo_by_title(db, user_id, title, due_date)
     if isinstance(found, dict):
         return found
     todo = found
@@ -199,11 +269,15 @@ def complete_todo(
 
 
 def delete_todo(
-    db: Session, user_id: uuid.UUID, title: str, user_confirmed: bool = False
+    db: Session,
+    user_id: uuid.UUID,
+    title: str,
+    due_date: str | None = None,
+    user_confirmed: bool = False,
 ) -> dict:
     if user_confirmed is not True:
         return _NEEDS_CONFIRMATION
-    found = _find_todo_by_title(db, user_id, title)
+    found = _find_todo_by_title(db, user_id, title, due_date)
     if isinstance(found, dict):
         return found
     todo = found

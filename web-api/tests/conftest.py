@@ -273,6 +273,9 @@ class FakeOllamaClient:
     """Each item is one non-streaming loop iteration's tool_calls, e.g.
     [{"name": "create_todo", "arguments": {"title": "Buy milk"}}]. Once exhausted, further
     stream=False calls return tool_calls=None, ending run_chat_with_tools's loop."""
+    confirm_pending_action: bool = True
+    """Canned answer for pending_action_is_confirmed's structured-output classification call
+    (chat.py, `format=...`), independent of tool_call_turns/chat_tokens."""
     _tool_turn_index: int = field(default=0, init=False)
 
     def embed(self, model: str, input: list[str]) -> SimpleNamespace:
@@ -285,10 +288,14 @@ class FakeOllamaClient:
         stream: bool = True,
         tools: list[dict] | None = None,
         think: bool | str | None = None,
+        format: str | dict | None = None,
         options: dict | None = None,
     ):
         if self.raise_on_chat:
             raise RuntimeError("fake chat failure")
+        if format:
+            content = json.dumps({"confirmed": self.confirm_pending_action})
+            return SimpleNamespace(message=SimpleNamespace(content=content))
         if stream:
             return self._stream_tokens()
         return self._next_nonstream_response()

@@ -7,7 +7,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from sse_starlette import EventSourceResponse
 
-from app.chat import build_system_prompt, build_user_prompt, run_chat_with_tools
+from app.chat import (
+    build_system_prompt,
+    build_user_prompt,
+    pending_action_is_confirmed,
+    pending_action_reply,
+    run_chat_with_tools,
+)
 from app.db import SessionLocal, get_db
 from app.embeddings import embed_texts
 from app.models import Conversation, DiaryEntry, Message, MessageReference, Todo, User
@@ -212,46 +218,71 @@ def send_message(
     db.refresh(user_message)
 
     settings = get_settings()
-    query_vector = embed_texts([payload.content], kind="query")[0]
-    points = vector_search(current_user.id, query_vector, settings.retrieval_top_k)
-
-    retrieved_chunks: list[dict] = []
     all_refs: list[tuple[str, uuid.UUID]] = []
     seen_refs: set[tuple[str, uuid.UUID]] = set()
-    for point in points:
-        point_payload = point.payload or {}
-        retrieved_chunks.append(
-            {"date": point_payload["date"], "chunk_text": point_payload["chunk_text"]}
-        )
-        ref = (point_payload["source_type"], uuid.UUID(point_payload["source_id"]))
-        if ref not in seen_refs:
-            seen_refs.add(ref)
-            all_refs.append(ref)
-
-    recent_turns = list(
-        reversed(
-            db.scalars(
-                select(Message)
-                .where(
-                    Message.conversation_id == conversation.id,
-                    Message.id != user_message.id,
-                )
-                .order_by(Message.created_at.desc())
-                .limit(settings.chat_context_turns * 2)
-            ).all()
-        )
-    )
-
-    system_prompt = build_system_prompt()
-    user_prompt = build_user_prompt(payload.content, retrieved_chunks, recent_turns)
-
-    def execute_tool_call(name: str, arguments: dict) -> dict:
-        return execute_tool(db, current_user.id, name, arguments)
 
     try:
-        mutated_refs, token_iterator = run_chat_with_tools(
-            system_prompt, user_prompt, execute_tool_call
-        )
+        pending_action = conversation.pending_action
+        if pending_action is not None and pending_action_is_confirmed(
+            pending_action, payload.content
+        ):
+            # The genie already proposed this exact action in a prior turn; execute it
+            # directly instead of asking the model to re-decide and re-call the tool on a
+            # bare "yes" — small local models aren't reliable at that, and free-form text
+            # can otherwise narrate success without ever invoking the tool.
+            conversation.pending_action = None
+            db.commit()
+            result = execute_tool(
+                db,
+                current_user.id,
+                pending_action["name"],
+                {**pending_action["arguments"], "user_confirmed": True},
+            )
+            mutated_refs, token_iterator = pending_action_reply(result)
+        else:
+            conversation.pending_action = None
+            db.commit()
+
+            query_vector = embed_texts([payload.content], kind="query")[0]
+            points = vector_search(current_user.id, query_vector, settings.retrieval_top_k)
+
+            retrieved_chunks: list[dict] = []
+            for point in points:
+                point_payload = point.payload or {}
+                retrieved_chunks.append(
+                    {"date": point_payload["date"], "chunk_text": point_payload["chunk_text"]}
+                )
+                ref = (point_payload["source_type"], uuid.UUID(point_payload["source_id"]))
+                if ref not in seen_refs:
+                    seen_refs.add(ref)
+                    all_refs.append(ref)
+
+            recent_turns = list(
+                reversed(
+                    db.scalars(
+                        select(Message)
+                        .where(
+                            Message.conversation_id == conversation.id,
+                            Message.id != user_message.id,
+                        )
+                        .order_by(Message.created_at.desc())
+                        .limit(settings.chat_context_turns * 2)
+                    ).all()
+                )
+            )
+
+            system_prompt = build_system_prompt()
+            user_prompt = build_user_prompt(payload.content, retrieved_chunks, recent_turns)
+
+            def execute_tool_call(name: str, arguments: dict) -> dict:
+                return execute_tool(db, current_user.id, name, arguments)
+
+            mutated_refs, new_pending_action, token_iterator = run_chat_with_tools(
+                system_prompt, user_prompt, execute_tool_call
+            )
+            if new_pending_action is not None:
+                conversation.pending_action = new_pending_action
+                db.commit()
     except Exception:
         logger.exception("Chat generation failed for conversation %s", conversation.id)
 
