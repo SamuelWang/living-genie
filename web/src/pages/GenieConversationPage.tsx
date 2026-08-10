@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -44,7 +44,6 @@ function streamQueryKey(conversationId: string) {
 
 export function GenieConversationPage() {
   const { id } = useParams<{ id?: string }>();
-  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -55,7 +54,6 @@ export function GenieConversationPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
-  const pendingHandledRef = useRef(false);
 
   const conversationQuery = useQuery({
     queryKey: ['conversations', id],
@@ -76,8 +74,7 @@ export function GenieConversationPage() {
     staleTime: Infinity,
     gcTime: Infinity,
   });
-  const { isStreaming, streamText, streamReferences, streamError } =
-    streamQuery.data ?? IDLE_STREAM_STATE;
+  const { isStreaming, streamText, streamReferences, streamError } = streamQuery.data ?? IDLE_STREAM_STATE;
 
   const runSend = useCallback(
     async (conversationId: string, content: string) => {
@@ -155,17 +152,6 @@ export function GenieConversationPage() {
     [queryClient, t],
   );
 
-  // Resumes streaming after the /genie/new -> /genie/:id navigation, regardless of whether that
-  // navigation remounted this page (see plan doc for why this can't just live in handleSend).
-  useEffect(() => {
-    const pendingMessage = (location.state as { pendingMessage?: string } | null)?.pendingMessage;
-    if (!id || !pendingMessage || pendingHandledRef.current) return;
-    pendingHandledRef.current = true;
-
-    void runSend(id, pendingMessage);
-    void navigate(location.pathname, { replace: true, state: null });
-  }, [id, location.state, location.pathname, navigate, runSend]);
-
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversationQuery.data?.messages.length, localMessages.length, streamText]);
@@ -182,11 +168,12 @@ export function GenieConversationPage() {
         const conversation = await createConversation();
         void navigate(`/genie/${conversation.id}`, {
           replace: true,
-          state: { pendingMessage: content },
         });
+        void runSend(conversation.id, content);
       } catch {
         setCreateError(t('common.genericError'));
         toast.error(t('common.genericError'));
+      } finally {
         setIsCreatingConversation(false);
       }
       return;
@@ -202,19 +189,18 @@ export function GenieConversationPage() {
     }
   }
 
-  const isNotFound =
-    !!id && conversationQuery.error instanceof ApiError && conversationQuery.error.status === 404;
+  const isNotFound = !!id && conversationQuery.error instanceof ApiError && conversationQuery.error.status === 404;
   const isLoadError = !!id && !!conversationQuery.error && !isNotFound;
 
   if (id && conversationQuery.isLoading) {
-    return <p className="text-muted-foreground text-sm">{t('common.loading')}</p>;
+    return <p className='text-muted-foreground text-sm'>{t('common.loading')}</p>;
   }
 
   if (isNotFound) {
     return (
-      <div className="flex flex-col gap-2">
-        <p className="text-muted-foreground text-sm">{t('genie.conversationNotFound')}</p>
-        <Link to="/genie" className="text-primary text-sm underline underline-offset-4">
+      <div className='flex flex-col gap-2'>
+        <p className='text-muted-foreground text-sm'>{t('genie.conversationNotFound')}</p>
+        <Link to='/genie' className='text-primary text-sm underline underline-offset-4'>
           {t('genie.backToList')}
         </Link>
       </div>
@@ -222,19 +208,33 @@ export function GenieConversationPage() {
   }
 
   if (isLoadError) {
-    return <p className="text-destructive text-sm">{t('common.genericError')}</p>;
+    return <p className='text-destructive text-sm'>{t('common.genericError')}</p>;
   }
 
-  const allMessages = [...(conversationQuery.data?.messages ?? []), ...localMessages];
+  const conversationMessages = conversationQuery.data?.messages ?? [];
+  // Navigating to a brand-new conversation's URL (see handleSend) triggers its own fetch of
+  // conversationQuery, independent of runSend's onDone fetch. That incidental fetch can pull back
+  // a conversation that already contains the just-sent user message while localMessages still
+  // holds the optimistic copy, so drop any local message whose persisted counterpart has already
+  // arrived. Matching on id doesn't work since makeUserMessage mints a client-side uuid; matching
+  // on role+content+created_at (server copy at or after the local stamp) avoids false-positive
+  // dedup when the same text is legitimately sent again later.
+  const pendingLocalMessages = localMessages.filter(
+    (local) =>
+      !conversationMessages.some(
+        (m) => m.role === local.role && m.content === local.content && m.created_at >= local.created_at,
+      ),
+  );
+  const allMessages = [...conversationMessages, ...pendingLocalMessages];
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <Link to="/genie" className="text-primary self-start text-sm underline underline-offset-4">
+    <div className='flex h-full flex-col gap-3'>
+      <Link to='/genie' className='text-primary self-start text-sm underline underline-offset-4'>
         {t('genie.backToList')}
       </Link>
 
-      <ScrollArea className="flex-1 min-h-0 rounded-md border p-4">
-        <div className="flex flex-col gap-3">
+      <ScrollArea className='flex-1 min-h-0 rounded-md border p-4'>
+        <div className='flex flex-col gap-3'>
           {allMessages.map((message) => (
             <ChatBubble
               key={message.id}
@@ -243,35 +243,28 @@ export function GenieConversationPage() {
               references={message.references}
             />
           ))}
-          {isStreaming && (
-            <ChatBubble role="assistant" content={streamText} references={streamReferences} streaming />
-          )}
+          {isStreaming && <ChatBubble role='assistant' content={streamText} references={streamReferences} streaming />}
           <div ref={bottomRef} />
         </div>
       </ScrollArea>
 
-      {isStreaming && !streamText && (
-        <p className="text-muted-foreground text-sm">{t('genie.streamingIndicator')}</p>
-      )}
+      {isStreaming && !streamText && <p className='text-muted-foreground text-sm'>{t('genie.streamingIndicator')}</p>}
       {(streamError ?? createError) && (
-        <p role="alert" className="text-destructive text-sm">
+        <p role='alert' className='text-destructive text-sm'>
           {streamError ?? createError}
         </p>
       )}
 
-      <div className="flex gap-2">
+      <div className='flex gap-2'>
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={t('genie.composerPlaceholder')}
           disabled={isStreaming || isCreatingConversation}
-          className="flex-1"
+          className='flex-1'
         />
-        <Button
-          onClick={() => void handleSend()}
-          disabled={isStreaming || isCreatingConversation || !draft.trim()}
-        >
+        <Button onClick={() => void handleSend()} disabled={isStreaming || isCreatingConversation || !draft.trim()}>
           {t('genie.sendButton')}
         </Button>
       </div>
