@@ -232,11 +232,15 @@ def pending_action_is_confirmed(pending_action: dict, user_message: str) -> bool
         model=settings.ollama_chat_model,
         messages=messages,
         stream=False,
+        think=settings.ollama_chat_think,
         format=_CONFIRMATION_SCHEMA,
         options={"temperature": 0},
     )
     try:
         return bool(json.loads(response.message.content)["confirmed"])
     except (json.JSONDecodeError, KeyError, TypeError):
-        logger.warning("Could not parse confirmation classification response; defaulting to False")
+        logger.warning(
+            "Could not parse confirmation classification response (content=%r); defaulting to False",
+            response.message.content,
+        )
         return False

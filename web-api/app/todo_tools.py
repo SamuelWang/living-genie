@@ -42,7 +42,9 @@ TODO_TOOLS: list[dict] = [
             "description": (
                 "Change an existing todo's title, description, or due date. Only call this "
                 "after the user has explicitly confirmed the exact change in a prior message, "
-                "and only then set user_confirmed=true."
+                "and only then set user_confirmed=true. Always include `title` (the todo's "
+                "CURRENT title, used to find it) even when you are renaming it via `new_title` "
+                "— `title` must never be omitted, and it is not the same field as `new_title`."
             ),
             "parameters": {
                 "type": "object",
@@ -50,7 +52,10 @@ TODO_TOOLS: list[dict] = [
                 "properties": {
                     "title": {
                         "type": "string",
-                        "description": "Current title identifying the todo.",
+                        "description": (
+                            "REQUIRED. The todo's CURRENT title, used to find it — always "
+                            "include this, even when also renaming via new_title."
+                        ),
                     },
                     "due_date": {
                         "type": "string",
@@ -59,7 +64,10 @@ TODO_TOOLS: list[dict] = [
                             "used to tell it apart from other todos sharing the same title."
                         ),
                     },
-                    "new_title": {"type": "string"},
+                    "new_title": {
+                        "type": "string",
+                        "description": "The new title to rename it to, if renaming. Not a substitute for `title`.",
+                    },
                     "new_description": {"type": "string"},
                     "new_due_date": {"type": "string", "description": "YYYY-MM-DD"},
                     "user_confirmed": {"type": "boolean"},

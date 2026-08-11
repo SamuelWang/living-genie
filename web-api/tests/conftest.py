@@ -277,6 +277,10 @@ class FakeOllamaClient:
     """Canned answer for pending_action_is_confirmed's structured-output classification call
     (chat.py, `format=...`), independent of tool_call_turns/chat_tokens."""
     _tool_turn_index: int = field(default=0, init=False)
+    last_confirmation_call_kwargs: dict | None = field(default=None, init=False)
+    """Captures the kwargs of the most recent chat() call made with a truthy `format`
+    (pending_action_is_confirmed's structured-output classification call) so tests can assert on
+    things like `think=` being passed, which this fake's return value doesn't otherwise depend on."""
 
     def embed(self, model: str, input: list[str]) -> SimpleNamespace:
         return SimpleNamespace(embeddings=[[0.1, 0.2, 0.3] for _ in input])
@@ -294,6 +298,12 @@ class FakeOllamaClient:
         if self.raise_on_chat:
             raise RuntimeError("fake chat failure")
         if format:
+            self.last_confirmation_call_kwargs = {
+                "model": model,
+                "think": think,
+                "format": format,
+                "options": options,
+            }
             content = json.dumps({"confirmed": self.confirm_pending_action})
             return SimpleNamespace(message=SimpleNamespace(content=content))
         if stream:
