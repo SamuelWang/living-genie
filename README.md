@@ -1,11 +1,12 @@
 # Living Genie
 
 Living Genie is a personal living assistant web application that integrates local LLM models
-(via Ollama) to help you work with your own personal data — starting with a diary. Register an
-account, log in, and keep a private, dated diary with rich markdown formatting and inline
-images. **Genie** is a chatbot that answers questions grounded in your own diary entries, with
-citations back to the entries it drew from — powered entirely by local models, with no external
-API calls.
+(via Ollama) to help you work with your own personal data — a diary and todos, with more data
+sources planned. Register an account, log in, and keep a private, dated diary with rich markdown
+formatting and inline images, alongside a todo list. **Genie** is a chatbot that answers questions
+grounded in your own diary entries and todos, with citations back to the sources it drew from, and
+can create, update, complete, or delete todos for you through chat — powered entirely by local
+models, with no external API calls.
 
 ## Stack
 
@@ -13,7 +14,7 @@ API calls.
 - **Backend** ([web-api/](web-api/)) — FastAPI + SQLAlchemy, PostgreSQL, cookie-session auth.
 - **Database** — PostgreSQL, running as its own container.
 - **AI / retrieval** — Ollama for local LLM inference (embedding + chat models) and Qdrant as
-  the vector store for diary embeddings, with a background worker handling asynchronous
+  the vector store for diary and todo embeddings, with a background worker handling asynchronous
   chunking and indexing.
 
 Each of these runs as its own Docker container, orchestrated locally via Docker Compose. See
