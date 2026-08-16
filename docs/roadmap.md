@@ -20,3 +20,10 @@
 - Implement full todo CRUD (create, view, edit, delete), scoped to the authenticated user.
 - Extend Genie with tool-calling so it can answer questions about the user's todos and create,
   update, complete, or delete them through chat.
+
+## v0.4.0
+
+- Require new accounts to verify their email address before they can log in.
+- Let users reset a forgotten password via an emailed link.
+- Store the user's language preference on their account so verification/reset emails (and
+  future account-wide content) can be sent in it.
