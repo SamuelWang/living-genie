@@ -1,16 +1,23 @@
+import hashlib
+import hmac
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request, status
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, UserSession
+from app.models import EmailToken, User, UserSession
 from app.settings import get_settings
 
 _password_hash = PasswordHash((Argon2Hasher(),))
+
+# Excludes visually ambiguous characters (0/O, 1/I/L) so a hand-typed code isn't misread.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 _credentials_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -41,6 +48,64 @@ def delete_session(db: Session, session_id: str) -> None:
     if session is not None:
         db.delete(session)
         db.commit()
+
+
+def _email_token_expiry_minutes(purpose: str) -> int:
+    settings = get_settings()
+    if purpose == "email_verification":
+        return settings.email_verification_token_expire_minutes
+    if purpose == "password_reset":
+        return settings.password_reset_token_expire_minutes
+    raise ValueError(f"unknown email token purpose: {purpose}")
+
+
+def create_email_token(db: Session, user_id: uuid.UUID, purpose: str) -> tuple[EmailToken, str]:
+    settings = get_settings()
+    code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(settings.email_code_length))
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=_email_token_expiry_minutes(purpose)
+    )
+    token = EmailToken(user_id=user_id, purpose=purpose, code_hash=code_hash, expires_at=expires_at)
+    db.add(token)
+    db.commit()
+    db.refresh(token)
+    return token, code
+
+
+def invalidate_email_tokens(db: Session, user_id: uuid.UUID, purpose: str) -> None:
+    db.execute(
+        delete(EmailToken).where(EmailToken.user_id == user_id, EmailToken.purpose == purpose)
+    )
+    db.commit()
+
+
+def consume_email_token(
+    db: Session, user_id: uuid.UUID, purpose: str, code: str
+) -> EmailToken | None:
+    settings = get_settings()
+    token = (
+        db.execute(
+            select(EmailToken)
+            .where(EmailToken.user_id == user_id, EmailToken.purpose == purpose)
+            .order_by(EmailToken.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if token is None or token.expires_at < datetime.now(timezone.utc):
+        return None
+
+    if hmac.compare_digest(token.code_hash, hashlib.sha256(code.encode()).hexdigest()):
+        db.delete(token)
+        db.commit()
+        return token
+
+    token.attempts += 1
+    if token.attempts >= settings.email_code_max_attempts:
+        db.delete(token)
+    db.commit()
+    return None
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
