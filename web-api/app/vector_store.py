@@ -22,18 +22,19 @@ def _point_id(source_type: str, source_id: uuid.UUID, chunk_index: int) -> str:
 
 def ensure_collection() -> None:
     client = get_qdrant_client()
-    if client.collection_exists(COLLECTION_NAME):
-        return
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=models.VectorParams(
-            size=VECTOR_SIZE, distance=models.Distance.COSINE, on_disk=True
-        ),
-    )
+    if not client.collection_exists(COLLECTION_NAME):
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(
+                size=VECTOR_SIZE, distance=models.Distance.COSINE, on_disk=True
+            ),
+        )
     client.create_payload_index(
         collection_name=COLLECTION_NAME,
         field_name="user_id",
-        field_schema=models.PayloadSchemaType.KEYWORD,
+        field_schema=models.KeywordIndexParams(
+            type=models.PayloadSchemaType.KEYWORD, is_tenant=True
+        ),
     )
 
 
