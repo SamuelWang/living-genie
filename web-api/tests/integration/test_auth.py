@@ -261,7 +261,7 @@ def test_forgot_password_identical_202_for_registered_and_unregistered(
     assert len(fake_email_sender.reset_calls) == 1
 
 
-def test_reset_password_valid_code_signs_in_and_invalidates_other_sessions(
+def test_reset_password_valid_code_does_not_sign_in_and_invalidates_other_sessions(
     authed_user: AuthedUser,
     second_client: TestClient,
     fake_email_sender: FakeEmailSender,
@@ -284,7 +284,7 @@ def test_reset_password_valid_code_signs_in_and_invalidates_other_sessions(
         json={"email": authed_user.email, "code": code, "new_password": "new-horse-pass-1"},
     )
     assert reset_resp.status_code == 200
-    assert authed_user.client.get("/auth/me").status_code == 200
+    assert authed_user.client.get("/auth/me").status_code == 401
 
     second_client.cookies.set(COOKIE_NAME, other_cookie)
     assert second_client.get("/auth/me").status_code == 401

@@ -184,9 +184,7 @@ def forgot_password(
 
 
 @router.post("/reset-password", response_model=UserRead)
-def reset_password(
-    payload: ResetPasswordRequest, response: Response, db: Session = Depends(get_db)
-) -> User:
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> User:
     email = payload.email.lower()
     user = db.scalar(select(User).where(User.email == email))
 
@@ -204,8 +202,6 @@ def reset_password(
     db.commit()
     db.refresh(user)
 
-    session = create_session(db, user.id)
-    _set_session_cookie(response, session)
     return user
 
 
