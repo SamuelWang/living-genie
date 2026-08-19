@@ -28,7 +28,7 @@ Prerequisites: Docker and Docker Compose.
 cp .env.example .env
 cp web-api/.env.example web-api/.env
 cp web/.env.example web/.env
-docker compose up --build
+docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build
 ```
 
 On first run, an `ollama-init` service automatically pulls the embedding and chat models, so the
@@ -36,7 +36,9 @@ initial `docker compose up` will take longer while they download. An NVIDIA GPU 
 automatically if available, but is not required — Ollama falls back to CPU inference.
 
 Once healthy, the frontend is at `http://localhost:5173` and the backend API is at
-`http://localhost:8000`.
+`http://localhost:8000`. The `docker-compose.dev.yaml` overlay also starts a local Mailpit
+instance, which catches account verification and password-reset emails instead of sending them
+for real — view them at `http://localhost:8025`.
 
 For local (non-Docker) development, running tests, and full configuration reference, see
 [web/README.md](web/README.md) and [web-api/README.md](web-api/README.md).
