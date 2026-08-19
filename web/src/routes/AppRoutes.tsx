@@ -3,6 +3,9 @@ import { RootLayout } from '@/components/layout/RootLayout';
 import { ProtectedRoute } from './ProtectedRoute';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
+import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage';
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 import { DiaryListPage } from '@/pages/DiaryListPage';
 import { DiaryCreatePage } from '@/pages/DiaryCreatePage';
 import { DiaryDetailPage } from '@/pages/DiaryDetailPage';
@@ -21,6 +24,9 @@ export function AppRoutes() {
       <Route element={<RootLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/" element={<Navigate to="/diaries" replace />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/diaries" element={<DiaryListPage />} />

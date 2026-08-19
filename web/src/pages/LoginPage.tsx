@@ -18,6 +18,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [touched, setTouched] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   const loginMutation = useMutation({ mutationFn: login });
 
@@ -28,6 +29,7 @@ export function LoginPage() {
     event.preventDefault();
     setTouched(true);
     setFormError(null);
+    setUnverifiedEmail(null);
     if (!emailValid || !passwordValid) return;
 
     loginMutation.mutate(
@@ -38,6 +40,11 @@ export function LoginPage() {
           void navigate('/diaries', { replace: true });
         },
         onError: (err) => {
+          if (err instanceof ApiError && err.status === 403) {
+            setUnverifiedEmail(email);
+            toast.error(t('auth.loginUnverified'));
+            return;
+          }
           const message =
             err instanceof ApiError && err.status === 401
               ? t('auth.invalidCredentials')
@@ -85,6 +92,18 @@ export function LoginPage() {
           )}
         </div>
 
+        {unverifiedEmail && (
+          <p role='alert' className='text-destructive text-sm'>
+            {t('auth.loginUnverified')}{' '}
+            <Link
+              to={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+              className='text-primary underline underline-offset-4'
+            >
+              {t('auth.loginUnverifiedLink')}
+            </Link>
+          </p>
+        )}
+
         {formError && (
           <p role='alert' className='text-destructive text-sm'>
             {formError}
@@ -99,6 +118,11 @@ export function LoginPage() {
         {t('auth.registerNoAccount')}{' '}
         <Link to='/register' className='text-primary underline underline-offset-4'>
           {t('auth.registerLink')}
+        </Link>
+      </p>
+      <p className='text-sm'>
+        <Link to='/forgot-password' className='text-primary underline underline-offset-4'>
+          {t('auth.loginForgotPasswordLink')}
         </Link>
       </p>
     </div>
