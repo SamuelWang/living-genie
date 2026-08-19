@@ -39,7 +39,13 @@ describe('ProtectedRoute', () => {
   });
 
   it('renders the protected child for authenticated users', async () => {
-    mockGetMe.mockResolvedValue({ id: '1', email: 'user@example.com', created_at: '2026-01-01' });
+    mockGetMe.mockResolvedValue({
+      id: '1',
+      email: 'user@example.com',
+      locale: 'en',
+      created_at: '2026-01-01',
+      email_verified: true,
+    });
 
     renderProtected();
 

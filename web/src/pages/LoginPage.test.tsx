@@ -64,7 +64,13 @@ describe('LoginPage', () => {
 
   it('navigates to the diary list on successful login', async () => {
     const user = userEvent.setup();
-    mockLogin.mockResolvedValue({ id: '1', email: 'user@example.com', created_at: '2026-01-01' });
+    mockLogin.mockResolvedValue({
+      id: '1',
+      email: 'user@example.com',
+      locale: 'en',
+      created_at: '2026-01-01',
+      email_verified: true,
+    });
     renderLoginPage();
 
     await user.type(screen.getByLabelText('Email'), 'user@example.com');
@@ -72,5 +78,24 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => expect(screen.getByText('Diaries page')).toBeInTheDocument());
+  });
+
+  it('shows a distinct unverified-account message with a verify-email link on 403', async () => {
+    const user = userEvent.setup();
+    mockLogin.mockRejectedValue(new ApiError(403, 'Email not verified'));
+    renderLoginPage();
+
+    await user.type(screen.getByLabelText('Email'), 'user@example.com');
+    await user.type(screen.getByLabelText('Password'), 'correct-password');
+    await user.click(screen.getByRole('button', { name: 'Log in' }));
+
+    expect(
+      await screen.findByText('Please verify your email before logging in.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Verify email' })).toHaveAttribute(
+      'href',
+      '/verify-email?email=user%40example.com',
+    );
+    expect(screen.queryByText('Incorrect email or password')).not.toBeInTheDocument();
   });
 });

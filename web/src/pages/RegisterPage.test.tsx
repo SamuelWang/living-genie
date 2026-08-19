@@ -1,21 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Route, Routes } from 'react-router';
+import { Route, Routes, useSearchParams } from 'react-router';
 import { renderWithProviders } from '@/test/render';
 import { RegisterPage } from './RegisterPage';
 import { register } from '@/api/auth';
 import { ApiError } from '@/api/errors';
+import i18n from '@/i18n/config';
 
 vi.mock('@/api/auth');
 
 const mockRegister = vi.mocked(register);
 
+function VerifyEmailStub() {
+  const [params] = useSearchParams();
+  return <div>Verify email page — {params.get('email')}</div>;
+}
+
 function renderRegisterPage() {
   return renderWithProviders(
     <Routes>
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/login" element={<div>Login page</div>} />
+      <Route path="/verify-email" element={<VerifyEmailStub />} />
     </Routes>,
     { route: '/register', withAuthProvider: false },
   );
@@ -71,15 +77,31 @@ describe('RegisterPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('navigates to /login on success (no auto-login)', async () => {
+  it('navigates to /verify-email with the email as a query param on success (no auto-login)', async () => {
     const user = userEvent.setup();
-    mockRegister.mockResolvedValue({ id: '1', email: 'user@example.com', created_at: '2026-01-01' });
+    mockRegister.mockResolvedValue({
+      id: '1',
+      email: 'user@example.com',
+      locale: 'en',
+      created_at: '2026-01-01',
+      email_verified: false,
+    });
     renderRegisterPage();
 
     await user.type(screen.getByLabelText('Email'), 'user@example.com');
     await user.type(screen.getByLabelText('Password'), 'longenoughpassword');
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
-    await waitFor(() => expect(screen.getByText('Login page')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText('Verify email page — user@example.com')).toBeInTheDocument(),
+    );
+    expect(mockRegister).toHaveBeenCalledWith(
+      {
+        email: 'user@example.com',
+        password: 'longenoughpassword',
+        locale: i18n.resolvedLanguage,
+      },
+      expect.anything(),
+    );
   });
 });
