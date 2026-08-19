@@ -105,6 +105,22 @@ the same Postgres instance as `DATABASE_URL` (so your dev database is never touc
 refreshed by a server-side Postgres `onupdate=func.now()`, so there's no pure-Python code path to
 exercise in isolation.
 
+## Scratch environment for manual verification
+
+For throwaway checks that aren't part of the permanent test suites — registering a user to look
+at a UI state, a one-off curl request, poking at a new endpoint — run the app against a dedicated
+`living_genie_scratch` database instead of your real dev database:
+
+```sh
+uv run python scripts/init_scratch_db.py   # once, or whenever you want a clean slate
+DATABASE_URL=postgresql+psycopg://living_genie:living_genie@localhost:5432/living_genie_scratch \
+  FRONTEND_ORIGIN=http://localhost:5183 \
+  uv run uvicorn app.main:app --reload --port 8090
+```
+
+Pair it with the frontend's scratch command (see [../web/README.md](../web/README.md)). See
+`CLAUDE.md` at the repo root for when this should be used instead of the normal dev server.
+
 ## Project layout
 
 ```
