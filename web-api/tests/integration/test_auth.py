@@ -123,6 +123,48 @@ def test_login_wrong_password_on_unverified_account_401(
     assert resp.status_code == 401
 
 
+def test_login_unverified_within_cooldown_does_not_resend(
+    client: TestClient, fake_email_sender: FakeEmailSender
+):
+    email = f"user-{uuid.uuid4().hex[:8]}@example.com"
+    client.post("/auth/register", json={"email": email, "password": "correct-horse-1"})
+    assert len(fake_email_sender.verification_calls) == 1
+
+    resp = client.post("/auth/login", json={"email": email, "password": "correct-horse-1"})
+    assert resp.status_code == 403
+    assert len(fake_email_sender.verification_calls) == 1
+
+
+def test_login_unverified_account_sends_new_verification_email_after_cooldown(
+    client: TestClient, db_session: Session, fake_email_sender: FakeEmailSender
+):
+    email = f"user-{uuid.uuid4().hex[:8]}@example.com"
+    client.post("/auth/register", json={"email": email, "password": "correct-horse-1"})
+    old_code = fake_email_sender.verification_calls[-1].code
+
+    user = db_session.scalar(select(User).where(User.email == email))
+    cooldown = get_settings().resend_verification_cooldown_seconds
+    user.last_verification_email_sent_at = datetime.now(timezone.utc) - timedelta(
+        seconds=cooldown + 1
+    )
+    db_session.commit()
+
+    resp = client.post("/auth/login", json={"email": email, "password": "correct-horse-1"})
+    assert resp.status_code == 403
+    assert len(fake_email_sender.verification_calls) == 2
+    new_code = fake_email_sender.verification_calls[-1].code
+    assert new_code != old_code
+
+    assert (
+        client.post("/auth/verify-email", json={"email": email, "code": old_code}).status_code
+        == 400
+    )
+    assert (
+        client.post("/auth/verify-email", json={"email": email, "code": new_code}).status_code
+        == 200
+    )
+
+
 def test_verify_email_valid_code_verifies_and_auto_logs_in(
     client: TestClient, fake_email_sender: FakeEmailSender
 ):

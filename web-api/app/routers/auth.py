@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,17 @@ def _in_cooldown(last_sent_at: datetime | None, cooldown_seconds: int) -> bool:
     return datetime.now(timezone.utc) - last_sent_at < timedelta(seconds=cooldown_seconds)
 
 
+def _issue_verification_email(
+    db: Session, user: User, background_tasks: BackgroundTasks, *, invalidate_prior: bool = True
+) -> None:
+    if invalidate_prior:
+        invalidate_email_tokens(db, user.id, "email_verification")
+    _, code = create_email_token(db, user.id, "email_verification")
+    user.last_verification_email_sent_at = datetime.now(timezone.utc)
+    db.commit()
+    background_tasks.add_task(send_verification_email, user, code)
+
+
 def _set_session_cookie(response: Response, session: UserSession) -> None:
     settings = get_settings()
     response.set_cookie(
@@ -71,17 +83,17 @@ def register(
     db.commit()
     db.refresh(user)
 
-    _, code = create_email_token(db, user.id, "email_verification")
-    user.last_verification_email_sent_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(user)
-
-    background_tasks.add_task(send_verification_email, user, code)
+    _issue_verification_email(db, user, background_tasks, invalidate_prior=False)
     return user
 
 
 @router.post("/login", response_model=UserRead)
-def login(payload: UserLogin, response: Response, db: Session = Depends(get_db)) -> User:
+def login(
+    payload: UserLogin,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> User | JSONResponse:
     email = payload.email.lower()
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not verify_password(payload.password, user.hashed_password):
@@ -90,9 +102,18 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db))
             detail="Incorrect email or password",
         )
     if user.email_verified_at is None:
-        raise HTTPException(
+        settings = get_settings()
+        if not _in_cooldown(
+            user.last_verification_email_sent_at, settings.resend_verification_cooldown_seconds
+        ):
+            _issue_verification_email(db, user, background_tasks)
+        # A raised HTTPException would discard the queued background task (FastAPI only
+        # attaches background_tasks to a response returned normally from the endpoint),
+        # so the send above requires returning the error response directly instead.
+        return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email not verified",
+            content={"detail": "Email not verified"},
+            background=background_tasks,
         )
 
     session = create_session(db, user.id)
@@ -131,11 +152,7 @@ def resend_verification(
             user.last_verification_email_sent_at, settings.resend_verification_cooldown_seconds
         )
     ):
-        invalidate_email_tokens(db, user.id, "email_verification")
-        _, code = create_email_token(db, user.id, "email_verification")
-        user.last_verification_email_sent_at = datetime.now(timezone.utc)
-        db.commit()
-        background_tasks.add_task(send_verification_email, user, code)
+        _issue_verification_email(db, user, background_tasks)
 
 
 @router.post("/verify-email", response_model=UserRead)
