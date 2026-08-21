@@ -38,7 +38,8 @@ automatically if available, but is not required — Ollama falls back to CPU inf
 Once healthy, the frontend is at `http://localhost:5173` and the backend API is at
 `http://localhost:8000`. The `docker-compose.dev.yaml` overlay also starts a local Mailpit
 instance, which catches account verification and password-reset emails instead of sending them
-for real — view them at `http://localhost:8025`.
+for real — view them at `http://localhost:8025`. In production, point the `SMTP_*` env vars in
+`web-api/.env` at a real provider instead.
 
 For local (non-Docker) development, running tests, and full configuration reference, see
 [web/README.md](web/README.md) and [web-api/README.md](web-api/README.md).

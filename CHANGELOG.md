@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-08-20
+
+### Added
+
+- Mandatory email verification: new accounts receive a one-time code by email and can't log in
+  until they enter it; a valid code verifies the account and signs the user in immediately.
+- Login now tells an unverified account to check its email for the verification code, distinct
+  from the generic incorrect-credentials error a wrong password still gets.
+- Resend-verification and forgot/reset-password flows, both resistant to email enumeration —
+  the response is identical whether or not the given address is registered.
+- A valid password-reset code sets a new password and signs the account out of every other
+  session; too many incorrect verification/reset codes in a row invalidates the outstanding code.
+- Account-level language preference (`locale`), saved at registration and kept in sync from the
+  in-app language switcher, used to send verification and password-reset emails in the account's
+  own language rather than a single hardcoded one.
+- Configurable SMTP via `SMTP_*`/`EMAIL_*` environment variables, so self-hosters can point at any
+  provider; local development sends through a Mailpit catcher by default.
+
 ## [0.3.0] - 2026-08-11
 
 ### Added
