@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     embedding_job_poll_interval_seconds: float = 2.0
     chat_tool_max_iterations: int = 4
     ollama_chat_temperature: float = 0.9
+    ollama_tool_temperature: float = 0.2
     ollama_chat_repeat_penalty: float = 1.3
     ollama_chat_think: bool = True
     smtp_host: str = "localhost"
