@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from datetime import date, timedelta
 from typing import Callable, Iterator
 
 from app.embeddings import get_ollama_client
@@ -10,24 +11,63 @@ from app.todo_tools import TODO_TOOLS
 
 logger = logging.getLogger(__name__)
 
-_NO_CONTEXT_MARKER = "No relevant content was found for this question."
+_NO_CONTEXT_MARKER = "No relevant diary excerpts were found for this message."
 _NO_HISTORY_MARKER = "(no earlier messages in this conversation)"
+_WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _build_date_reference(today: date) -> str:
+    """Renders this week's and next week's weekday -> date mapping as a lookup table.
+
+    Small local models are unreliable at date *arithmetic* ("today is Friday, so next
+    Monday is..."), even when told today's date directly. Giving them a table to look up
+    instead of a calculation to perform is far more reliable for phrases like "next
+    Monday" / "下週一" / "this Friday" / "這週五".
+    """
+    this_monday = today - timedelta(days=today.weekday())
+    lines = []
+    for week_offset, label in [(0, "This week"), (7, "Next week")]:
+        monday = this_monday + timedelta(days=week_offset)
+        days = ", ".join(
+            f"{name} {(monday + timedelta(days=i)).isoformat()}"
+            for i, name in enumerate(_WEEKDAY_NAMES)
+        )
+        lines.append(f"{label}: {days}")
+    return "\n".join(lines)
 
 
 def build_system_prompt() -> str:
+    today = date.today()
     return (
         "You are the Living Genie personal assistant. You help the user work with their own "
         "data — diary entries and todos — and understand how to use the Living Genie app.\n\n"
+        f"Today's date is {today.isoformat()} ({today.strftime('%A')}). When the user mentions a "
+        "relative date (e.g. \"tomorrow\", \"next Monday\", \"下週一\", \"明天\", \"這週五\"), "
+        "look up the matching date in this table rather than computing it yourself:\n"
+        f"{_build_date_reference(today)}\n\n"
         "Rules:\n"
-        "- Answer only using the retrieved excerpts provided below, general knowledge about how "
-        "the Living Genie app works (its features, supported languages, etc.), or the todo tools "
-        "made available to you.\n"
+        "- Whether the user is asking for a todo action (create, update, complete, delete) is "
+        "completely independent of the retrieved excerpts below — a todo action is a request to "
+        "act, not a question to answer, so never decline or say nothing-relevant-was-found just "
+        "because no excerpts matched. For create_todo specifically, call it directly whenever the "
+        "user's message asks to add a todo — it needs no confirmation. For update_todo, "
+        "complete_todo, and delete_todo, do NOT call them yet at this point — see the confirmation "
+        "rule below, which still applies in full and takes precedence. When creating or updating a "
+        "todo, pass any due date the user gives as due_date (YYYY-MM-DD); since todos have no "
+        "separate time-of-day field, fold any stated time of day into the description instead "
+        "(e.g. \"看醫生回診（下午兩點）\") rather than dropping it or inventing a field for it.\n"
+        "- Never tell the user a todo was created, updated, completed, or deleted unless you "
+        "actually called that exact tool earlier in this turn and it returned success — if you "
+        "did not call the tool, do not claim you did.\n"
+        "- For everything else, answer only using the retrieved excerpts provided below or general "
+        "knowledge about how the Living Genie app works (its features, supported languages, etc.).\n"
         "- Give a direct, specific answer to the user's actual question. Never respond by just "
         "repeating a retrieved excerpt verbatim — read it, then state the answer in your own "
         "words (e.g. if asked what time of day something happened, answer with the time of day, "
         "not the whole excerpt).\n"
-        "- If the retrieved excerpts don't contain information relevant to the question, say so "
-        "plainly instead of guessing or fabricating an answer.\n"
+        "- If the user is asking a question (not requesting a todo action) and the retrieved "
+        "excerpts don't contain information relevant to it, say so plainly instead of guessing or "
+        "fabricating an answer.\n"
         "- If multiple retrieved excerpts describe the same topic or event, prefer the one with "
         "the latest date shown in its [date] prefix — especially when the user asks about the "
         "most recent, latest, or last occurrence of something (e.g. \"最近\", \"最新\", \"上次\", "
@@ -67,7 +107,7 @@ def build_user_prompt(
     return (
         f"Retrieved excerpts:\n{excerpts}\n\n"
         f"Recent conversation:\n{history}\n\n"
-        f"User's question:\n{question}"
+        f"User's message:\n{question}"
     )
 
 
@@ -87,7 +127,15 @@ def run_chat_with_tools(
     """
     settings = get_settings()
     client = get_ollama_client()
-    options = {
+    # Deciding whether to call a tool is a structured yes/no choice, not creative
+    # writing — a low, near-deterministic temperature makes that decision far more
+    # reliable. The persona-driven final reply keeps the higher, more expressive
+    # temperature separately (reply_options below).
+    tool_options = {
+        "temperature": settings.ollama_tool_temperature,
+        "repeat_penalty": settings.ollama_chat_repeat_penalty,
+    }
+    reply_options = {
         "temperature": settings.ollama_chat_temperature,
         "repeat_penalty": settings.ollama_chat_repeat_penalty,
     }
@@ -106,7 +154,7 @@ def run_chat_with_tools(
             tools=TODO_TOOLS,
             stream=False,
             think=settings.ollama_chat_think,
-            options=options,
+            options=tool_options,
         )
         message = response.message
         if not message.tool_calls:
@@ -158,7 +206,7 @@ def run_chat_with_tools(
             messages=messages,
             stream=True,
             think=settings.ollama_chat_think,
-            options=options,
+            options=reply_options,
         )
         for chunk in stream:
             if chunk.message.content:

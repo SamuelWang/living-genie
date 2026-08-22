@@ -73,6 +73,19 @@ the source of truth for local defaults:
 | `SESSION_EXPIRE_MINUTES`| `10080` (7 days)                | Session lifetime                                                                  |
 | `COOKIE_SECURE`         | `false`                         | Set `true` in production (HTTPS) so the session cookie requires TLS               |
 | `FRONTEND_ORIGIN`       | `http://localhost:5173`         | Allowed CORS origin for the frontend (credentials are allowed)                    |
+| `SMTP_HOST`             | `localhost`                     | SMTP server host; Mailpit under `docker-compose.dev.yaml` by default              |
+| `SMTP_PORT`             | `1025`                          | SMTP server port (Mailpit's default)                                              |
+| `SMTP_USER`             | *(empty)*                       | SMTP auth username; login is skipped entirely when empty                          |
+| `SMTP_PASSWORD`         | *(empty)*                       | SMTP auth password                                                                |
+| `SMTP_FROM_EMAIL`       | *(required)*                    | `From` address for verification/reset emails                                      |
+| `SMTP_FROM_NAME`        | *(required)*                    | `From` display name for verification/reset emails                                 |
+| `SMTP_USE_TLS`          | `false`                         | Use STARTTLS when connecting to the SMTP server                                   |
+| `EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES` | `1440`         | How long an emailed verification code stays valid                                 |
+| `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`     | `30`           | How long an emailed password-reset code stays valid                               |
+| `RESEND_VERIFICATION_COOLDOWN_SECONDS`    | `60`           | Minimum interval between verification-email (re)sends to the same account         |
+| `PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS` | `60`           | Minimum interval between password-reset email sends to the same account           |
+| `EMAIL_CODE_LENGTH`     | `8`                              | Length of generated verification/reset codes                                      |
+| `EMAIL_CODE_MAX_ATTEMPTS` | `5`                            | Incorrect code attempts allowed before a code is invalidated                      |
 
 ## Database & migrations
 
@@ -104,6 +117,22 @@ the same Postgres instance as `DATABASE_URL` (so your dev database is never touc
 `updated_at` refresh-on-edit is covered as an integration test rather than a unit test — it's
 refreshed by a server-side Postgres `onupdate=func.now()`, so there's no pure-Python code path to
 exercise in isolation.
+
+## Scratch environment for manual verification
+
+For throwaway checks that aren't part of the permanent test suites — registering a user to look
+at a UI state, a one-off curl request, poking at a new endpoint — run the app against a dedicated
+`living_genie_scratch` database instead of your real dev database:
+
+```sh
+uv run python scripts/init_scratch_db.py   # once, or whenever you want a clean slate
+DATABASE_URL=postgresql+psycopg://living_genie:living_genie@localhost:5432/living_genie_scratch \
+  FRONTEND_ORIGIN=http://localhost:5183 \
+  uv run uvicorn app.main:app --reload --port 8090
+```
+
+Pair it with the frontend's scratch command (see [../web/README.md](../web/README.md)). See
+`CLAUDE.md` at the repo root for when this should be used instead of the normal dev server.
 
 ## Project layout
 

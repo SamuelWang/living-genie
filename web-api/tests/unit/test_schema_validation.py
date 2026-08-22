@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import DiaryEntryCreate, DiaryEntryUpdate
+from app.schemas import DiaryEntryCreate, DiaryEntryUpdate, LocaleUpdate, ResetPasswordRequest
 
 
 def test_create_missing_title_raises_validation_error():
@@ -48,3 +48,32 @@ def test_update_empty_title_raises_validation_error():
 def test_update_partial_fields_leave_others_unset():
     update = DiaryEntryUpdate(title="New title")
     assert update.model_dump(exclude_unset=True) == {"title": "New title"}
+
+
+def test_reset_password_request_new_password_too_short_raises_validation_error():
+    with pytest.raises(ValidationError):
+        ResetPasswordRequest(email="a@example.com", code="ABCD1234", new_password="short1")
+
+
+def test_reset_password_request_new_password_too_long_raises_validation_error():
+    with pytest.raises(ValidationError):
+        ResetPasswordRequest(
+            email="a@example.com", code="ABCD1234", new_password="a" * 73
+        )
+
+
+def test_reset_password_request_accepts_valid_length_password():
+    request = ResetPasswordRequest(
+        email="a@example.com", code="ABCD1234", new_password="valid-password-1"
+    )
+    assert request.new_password == "valid-password-1"
+
+
+def test_locale_update_rejects_unsupported_locale():
+    with pytest.raises(ValidationError):
+        LocaleUpdate(locale="fr")
+
+
+def test_locale_update_accepts_supported_locales():
+    assert LocaleUpdate(locale="zh-Hant").locale == "zh-Hant"
+    assert LocaleUpdate(locale="en").locale == "en"

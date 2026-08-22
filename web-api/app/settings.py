@@ -31,8 +31,22 @@ class Settings(BaseSettings):
     embedding_job_poll_interval_seconds: float = 2.0
     chat_tool_max_iterations: int = 4
     ollama_chat_temperature: float = 0.9
+    ollama_tool_temperature: float = 0.2
     ollama_chat_repeat_penalty: float = 1.3
     ollama_chat_think: bool = True
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str
+    smtp_from_name: str
+    smtp_use_tls: bool = False
+    email_verification_token_expire_minutes: int = 1440
+    password_reset_token_expire_minutes: int = 30
+    resend_verification_cooldown_seconds: int = 60
+    password_reset_request_cooldown_seconds: int = 60
+    email_code_length: int = 8
+    email_code_max_attempts: int = 5
 
 
 @lru_cache

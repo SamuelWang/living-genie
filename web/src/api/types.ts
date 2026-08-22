@@ -62,17 +62,43 @@ export interface UploadResponse {
 export interface UserCreate {
   email: string;
   password: string;
+  locale: string;
 }
 
 export interface UserRead {
   id: string;
   email: string;
+  locale: string;
   created_at: string;
+  email_verified: boolean;
 }
 
 export interface UserLogin {
   email: string;
   password: string;
+}
+
+export interface ResendVerificationRequest {
+  email: string;
+}
+
+export interface VerifyEmailRequest {
+  email: string;
+  code: string;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  code: string;
+  new_password: string;
+}
+
+export interface LocaleUpdate {
+  locale: string;
 }
 
 export interface ValidationErrorItem {

@@ -48,9 +48,13 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
 - **i18n**: [react-i18next](https://react.i18next.com/) with `i18next-browser-languagedetector`
   for first-visit browser-locale detection. Supported locales: `zh-Hant` (default/fallback) and
   `en`. Translation strings live under `web/src/locales/{lng}/translation.json`, loaded eagerly
-  (small string set at this scale). The detected/selected locale is persisted to `localStorage`
-  only — no backend involvement, since the preference isn't synced to the account. A
-  language-switcher component (e.g. in the nav) lets the user override the language at any time.
+  (small string set at this scale). The detected/selected locale is persisted to `localStorage`;
+  starting in v0.4.0 it's also synced to the account (`PUT /auth/locale`) whenever a signed-in
+  user changes language — see
+  [Email verification & password reset](#email-verification--password-reset) — though a
+  signed-out visitor's choice still only affects `localStorage`, since there's no account yet to
+  save it to. A language-switcher component (e.g. in the nav) lets the user override the language
+  at any time.
 - **Testing**:
   - Vitest + React Testing Library for unit/component tests
   - Playwright for integration/e2e tests of key flows (diary CRUD end-to-end through the UI)
@@ -81,14 +85,33 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   origin-agnostic nature the earlier JWT-bearer approach had. CORS is configured with
   `allow_credentials=True` and an explicit `frontend_origin` (not `*`, which the browser rejects
   for credentialed requests) so the cookie is actually sent/accepted across the frontend/backend
-  ports.
+  ports. Starting in v0.4.0, `POST /auth/register` no longer implies the account can log in right
+  away: the created account is unverified until its emailed one-time code is used, and
+  `POST /auth/login` returns `403` for a correct password against an unverified account (distinct
+  from the `401` used for wrong credentials) rather than issuing a session. `POST /auth/verify-email`
+  auto-logs-in on success — issuing a session and setting the cookie exactly as `/auth/login` does
+  — since the user has just proven mailbox ownership via the exact browser flow they started.
+  `POST /auth/reset-password` does not: it deletes every `sessions` row for that user (there's no
+  "current" session yet, since the request itself isn't authenticated) but issues no new one, so
+  the resetting browser is redirected to `/login` to sign in with the new password.
+  Verification/reset are delivered as a
+  manually-entered code rather than a clickable link specifically so no token ever appears in a
+  URL — an automated email-security-scanner prefetching every link in the message has nothing to
+  consume, unlike a link-based token, which a scanner's GET would burn before the real user ever
+  clicks it. See [Email verification & password reset](#email-verification--password-reset) below
+  for the full design.
 - **API**: REST endpoints for auth:
 
-  | Method | Path              | Description                          |
-  |--------|-------------------|------------------------------------------|
-  | POST   | `/auth/register`  | Create a new user account                |
-  | POST   | `/auth/login`     | Authenticate; sets the session cookie    |
-  | POST   | `/auth/logout`    | Ends the session; clears the cookie      |
+  | Method | Path                         | Description                                                        |
+  |--------|------------------------------|----------------------------------------------------------------------|
+  | POST   | `/auth/register`             | Create a new user account; sends a verification email                |
+  | POST   | `/auth/login`                | Authenticate; sets the session cookie; `403` if unverified            |
+  | POST   | `/auth/logout`                | Ends the session; clears the cookie                                   |
+  | POST   | `/auth/resend-verification`  | Resend the verification code (same response whether or not needed)   |
+  | POST   | `/auth/verify-email`         | Verify the account from an emailed one-time code, submitted with the account's email; auto-logs-in on success |
+  | POST   | `/auth/forgot-password`      | Request a reset code (same response whether or not the email exists)  |
+  | POST   | `/auth/reset-password`       | Set a new password from an emailed one-time code, submitted with the account's email; auto-logs-in, revokes other sessions |
+  | PUT    | `/auth/locale`                | Update the signed-in user's saved language preference                 |
 
   All endpoints below require a valid session cookie and are scoped to the authenticated user.
   Diary CRUD:
@@ -166,6 +189,73 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   - Unit tests for business logic
   - Integration tests run against a real/test PostgreSQL instance (e.g. pytest)
   - No fixed coverage target
+
+### Email verification & password reset
+
+- **Token table**: a single `email_tokens` table represents both a verification code and a reset
+  code, discriminated by `purpose` (`"email_verification"` | `"password_reset"`) rather than two
+  near-duplicate tables. `id` is an opaque uuid; rows are looked up by `user_id`/`purpose` (backed
+  by a composite index on that pair), not by the code itself, since a short human-typed code isn't
+  unique enough to double as a lookup key. `code_hash` stores a `hashlib.sha256` hash of the code,
+  never the plaintext; `attempts` (default 0) counts wrong submissions; there's no `consumed`
+  flag — single-use is enforced by deleting the row on consumption, mirroring `delete_session()`.
+  `security.py`'s `create_email_token()`/`invalidate_email_tokens()`/`consume_email_token()` are
+  parallel to `create_session()`/`delete_session()`: `create_email_token()` generates an
+  `email_code_length`-character code from an alphabet excluding visually ambiguous characters
+  (`0`/`O`, `1`/`I`/`L`) and returns the plaintext once, for the email; `consume_email_token()`
+  compares via `hmac.compare_digest`, incrementing `attempts` on a mismatch and deleting the row
+  once it reaches `email_code_max_attempts` — the same effect as expiry, forcing a resend.
+- **Expiry**: verification codes last `email_verification_token_expire_minutes` (1440, 24h), since
+  a leaked one only activates an empty new account; reset codes last
+  `password_reset_token_expire_minutes` (30), since they grant control of an existing,
+  potentially data-bearing account.
+- **Reissue invalidates prior codes**: `/auth/resend-verification` and `/auth/forgot-password`
+  call `invalidate_email_tokens()` before issuing a new token, so there's never more than one
+  valid code per purpose per user.
+- **Anti-enumeration**: `/auth/resend-verification` and `/auth/forgot-password` return an
+  identical `202` regardless of whether the email is registered (or, for resend, already
+  verified) — a no-op internally if not found. `/auth/verify-email` and `/auth/reset-password`
+  return the same generic "invalid or expired code" error for a wrong code, an
+  expired/already-consumed code, an already-locked-out code, or a nonexistent email — no
+  distinguishable failure path.
+- **Login resends on unverified**: `/auth/login` against an unverified account returns `403` and,
+  subject to the same cooldown as `/auth/resend-verification`, also re-sends the verification
+  email as a side effect.
+- **No auto-login on reset**: `/auth/verify-email` creates a session and sets the cookie on
+  success, exactly like `/auth/login`. `/auth/reset-password` does not — it deletes every other
+  session for the user but issues no new one; the resetting browser is redirected to `/login` to
+  sign in with the new password.
+- **Email module**: a flat `web-api/app/email.py` (matching `embeddings.py`/`chunking.py`) built
+  on `aiosmtplib`. Provider-agnostic — STARTTLS/auth are driven entirely by settings, and login is
+  skipped when `smtp_user` is empty, so the same code path works unauthenticated against Mailpit
+  and authenticated against a real relay with no code change. Sends go through FastAPI's
+  `BackgroundTasks` and are best-effort — caught and logged, never raised — since
+  `/auth/register` and `/auth/forgot-password` must still succeed if SMTP is briefly down. Each
+  email is multipart (plain-text + HTML).
+- **Localized content**: subject/body strings live in an inline
+  `_EMAIL_COPY = {"en": {...}, "zh-Hant": {...}}` dict in `email.py` rather than a general i18n
+  framework — the string set is tiny, the same reasoning the frontend applies to its own locale
+  JSON. Copy is selected via the target user's `locale` column. The body shows the plaintext code
+  and its validity window; it may include a plain convenience link to the app's verify/reset page,
+  but the code itself is never embedded in a URL.
+- **Locale persistence**: `users.locale` (default `"zh-Hant"`) is set from the frontend's current
+  language at registration and kept in sync via `PUT /auth/locale`, called by the language
+  switcher whenever a signed-in user changes language. A signed-out visitor's choice still only
+  persists to `localStorage`.
+- **Resend cooldown**: `email_tokens` rows are deleted on both consume and invalidate, so they
+  can't answer "when was the last email actually sent." Two nullable `timestamptz` columns on
+  `users` — `last_verification_email_sent_at`/`last_password_reset_email_sent_at` — track that
+  instead, set whenever the corresponding email is sent (including registration's initial one).
+  Within the configured cooldown, `/auth/resend-verification`/`/auth/forgot-password` are a
+  silent no-op — same `202`, no new code, no email — rather than a distinguishable "please wait,"
+  since a distinct response would let a caller tell a registered email (which can enter cooldown)
+  apart from one that never does.
+- **Settings** (`web-api/app/settings.py`/`.env.example`): `smtp_host` (`localhost`), `smtp_port`
+  (`1025`, Mailpit's default), `smtp_user`/`smtp_password` (empty), `smtp_from_email`,
+  `smtp_from_name`, `smtp_use_tls` (`false`), `email_verification_token_expire_minutes` (1440),
+  `password_reset_token_expire_minutes` (30), `resend_verification_cooldown_seconds` (60),
+  `password_reset_request_cooldown_seconds` (60), `email_code_length` (8),
+  `email_code_max_attempts` (5).
 
 ## AI / RAG pipeline
 
@@ -335,12 +425,16 @@ real usage.
 
 `users` table:
 
-| Column            | Type              | Notes                                   |
-|-------------------|-------------------|--------------------------------------------|
-| `id`              | uuid, PK          |                                             |
-| `email`           | text              | unique, not null                           |
-| `hashed_password` | text              | not null, never exposed via API            |
-| `created_at`      | timestamptz       | system-set on creation                     |
+| Column              | Type              | Notes                                   |
+|---------------------|-------------------|--------------------------------------------|
+| `id`                | uuid, PK          |                                             |
+| `email`             | text              | unique, not null                           |
+| `hashed_password`   | text              | not null, never exposed via API            |
+| `email_verified_at` | timestamptz       | nullable; NULL = not verified              |
+| `locale`            | text              | not null, default `"zh-Hant"`              |
+| `last_verification_email_sent_at` | timestamptz | nullable; set whenever a verification email is sent, enforces the resend cooldown |
+| `last_password_reset_email_sent_at` | timestamptz | nullable; set whenever a reset email is sent, enforces the resend cooldown |
+| `created_at`        | timestamptz       | system-set on creation                     |
 
 `diary_entries` table:
 
@@ -375,6 +469,20 @@ real usage.
 | `user_id`    | uuid, FK → `users.id`  | not null, indexed, cascade-deletes with the user |
 | `created_at` | timestamptz            | system-set on creation                      |
 | `expires_at` | timestamptz            | session expiry; checked on every request     |
+
+`email_tokens` table (see
+[Email verification & password reset](#email-verification--password-reset) for why `purpose` is
+shaped this way):
+
+| Column       | Type                  | Notes                                              |
+|--------------|-----------------------|---------------------------------------------------------|
+| `id`         | uuid, PK              | ordinary opaque row id — no longer doubles as the bearer secret |
+| `user_id`    | uuid, FK → `users.id` | not null, indexed, cascade-deletes with the user          |
+| `purpose`    | text                  | `email_verification` / `password_reset`; not null         |
+| `code_hash`  | text                  | not null; `hashlib.sha256` hash of the one-time code, never stored in plaintext |
+| `attempts`   | int                   | not null, default `0`; incremented on each incorrect code submission |
+| `created_at` | timestamptz           | system-set on creation                                     |
+| `expires_at` | timestamptz           | code expiry; checked on consumption                        |
 
 `embedding_jobs` table (see
 [Generalizing the indexing pipeline for todos](#generalizing-the-indexing-pipeline-for-todos) for
@@ -441,6 +549,11 @@ mutation affected) with one mechanism, and cascade-deletes with its message unli
   for `web-api`/`worker`. Each service owns its own `.env`/`.env.example` (e.g.
   `web-api/.env.example`) rather than a single shared root file; Compose wires each in per-service
   via `env_file:`.
+- **Local dev only**: `docker-compose.dev.yaml` adds a `mailpit` container (SMTP catcher + web
+  UI, `axllent/mailpit`, no persistent volume) so verification/reset emails can be viewed locally
+  without a real SMTP provider account; `web-api`'s dev environment points `SMTP_HOST`/
+  `SMTP_PORT` at it. The base `docker-compose.yaml` is unchanged — production SMTP flows through
+  `web-api/.env` like any other setting, pointed at whatever real provider is configured.
 
 ## Repository layout (proposed)
 

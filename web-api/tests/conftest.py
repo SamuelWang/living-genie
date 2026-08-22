@@ -128,26 +128,32 @@ class AuthedUser:
 
 
 def register_and_login(
-    client: TestClient, email: str, password: str = "correct-horse-1"
+    client: TestClient,
+    email: str,
+    fake_email_sender: "FakeEmailSender",
+    password: str = "correct-horse-1",
 ) -> AuthedUser:
     resp = client.post("/auth/register", json={"email": email, "password": password})
     assert resp.status_code == 201, resp.text
     user_id = resp.json()["id"]
 
-    login_resp = client.post("/auth/login", json={"email": email, "password": password})
-    assert login_resp.status_code == 200, login_resp.text
+    code = fake_email_sender.verification_calls[-1].code
+    verify_resp = client.post("/auth/verify-email", json={"email": email, "code": code})
+    assert verify_resp.status_code == 200, verify_resp.text
 
     return AuthedUser(client=client, user_id=uuid.UUID(user_id), email=email, password=password)
 
 
 @pytest.fixture
-def authed_user(client: TestClient) -> AuthedUser:
-    return register_and_login(client, f"user-{uuid.uuid4().hex[:8]}@example.com")
+def authed_user(client: TestClient, fake_email_sender: "FakeEmailSender") -> AuthedUser:
+    return register_and_login(client, f"user-{uuid.uuid4().hex[:8]}@example.com", fake_email_sender)
 
 
 @pytest.fixture
-def other_user(second_client: TestClient) -> AuthedUser:
-    return register_and_login(second_client, f"user-{uuid.uuid4().hex[:8]}@example.com")
+def other_user(second_client: TestClient, fake_email_sender: "FakeEmailSender") -> AuthedUser:
+    return register_and_login(
+        second_client, f"user-{uuid.uuid4().hex[:8]}@example.com", fake_email_sender
+    )
 
 
 @pytest.fixture
@@ -182,8 +188,12 @@ def real_commit_client():
 
 
 @pytest.fixture
-def authed_user_real_commits(real_commit_client: TestClient) -> AuthedUser:
-    return register_and_login(real_commit_client, f"user-{uuid.uuid4().hex[:8]}@example.com")
+def authed_user_real_commits(
+    real_commit_client: TestClient, fake_email_sender: "FakeEmailSender"
+) -> AuthedUser:
+    return register_and_login(
+        real_commit_client, f"user-{uuid.uuid4().hex[:8]}@example.com", fake_email_sender
+    )
 
 
 @pytest.fixture
@@ -193,8 +203,12 @@ def second_real_commit_client(real_commit_client: TestClient):
 
 
 @pytest.fixture
-def other_user_real_commits(second_real_commit_client: TestClient) -> AuthedUser:
-    return register_and_login(second_real_commit_client, f"user-{uuid.uuid4().hex[:8]}@example.com")
+def other_user_real_commits(
+    second_real_commit_client: TestClient, fake_email_sender: "FakeEmailSender"
+) -> AuthedUser:
+    return register_and_login(
+        second_real_commit_client, f"user-{uuid.uuid4().hex[:8]}@example.com", fake_email_sender
+    )
 
 
 @dataclass
@@ -332,6 +346,35 @@ def fake_ollama_client(monkeypatch):
     monkeypatch.setattr("app.embeddings.get_ollama_client", lambda: client)
     monkeypatch.setattr("app.chat.get_ollama_client", lambda: client)
     return client
+
+
+@dataclass
+class EmailCall:
+    email: str
+    code: str
+    locale: str
+
+
+@dataclass
+class FakeEmailSender:
+    """Records calls that would have gone through app/email.py's SMTP senders."""
+
+    verification_calls: list[EmailCall] = field(default_factory=list)
+    reset_calls: list[EmailCall] = field(default_factory=list)
+
+    async def send_verification_email(self, user: User, code: str) -> None:
+        self.verification_calls.append(EmailCall(user.email, code, user.locale))
+
+    async def send_password_reset_email(self, user: User, code: str) -> None:
+        self.reset_calls.append(EmailCall(user.email, code, user.locale))
+
+
+@pytest.fixture
+def fake_email_sender(monkeypatch):
+    fake = FakeEmailSender()
+    monkeypatch.setattr("app.routers.auth.send_verification_email", fake.send_verification_email)
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", fake.send_password_reset_email)
+    return fake
 
 
 def parse_sse_events(text: str) -> list[tuple[str, dict]]:

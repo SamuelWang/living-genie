@@ -5,6 +5,8 @@ standalone function, so it's covered as an integration assertion in
 tests/integration/test_chat_retrieval_scoping.py instead of here.
 """
 
+from datetime import date
+
 from app.chat import build_system_prompt, build_user_prompt
 from app.models import Message
 
@@ -27,9 +29,31 @@ def test_build_system_prompt_includes_persona_tone_instruction():
     assert "warm, perceptive companion" in prompt
 
 
+def test_build_system_prompt_includes_todays_date():
+    prompt = build_system_prompt()
+    assert date.today().isoformat() in prompt
+
+
+def test_build_system_prompt_scopes_no_context_rule_to_questions():
+    prompt = build_system_prompt()
+    assert "independent of the retrieved excerpts" in prompt
+    assert "not a question to answer" in prompt
+
+
+def test_build_system_prompt_still_requires_confirmation_before_mutating_tools():
+    prompt = build_system_prompt()
+    assert "do NOT call them yet at this point" in prompt
+    assert "the confirmation rule below" in prompt
+
+
+def test_build_system_prompt_forbids_claiming_untaken_todo_actions():
+    prompt = build_system_prompt()
+    assert "do not claim you did" in prompt
+
+
 def test_build_user_prompt_uses_no_context_marker_when_no_chunks():
     prompt = build_user_prompt("What did I write yesterday?", [], [])
-    assert "No relevant content was found for this question." in prompt
+    assert "No relevant diary excerpts were found for this message." in prompt
     assert "What did I write yesterday?" in prompt
 
 

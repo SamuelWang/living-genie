@@ -24,6 +24,17 @@ pnpm dev
 
 The app is served at `http://localhost:5173`, matching `web-api`'s default `FRONTEND_ORIGIN`.
 
+### Scratch environment for manual verification
+
+For throwaway checks against a `web-api` scratch instance (see
+[../web-api/README.md](../web-api/README.md)) instead of your real dev database:
+
+```sh
+VITE_API_URL=http://localhost:8090 pnpm dev --port 5183
+```
+
+See `CLAUDE.md` at the repo root for when this should be used instead of the normal dev server.
+
 ### Running via Docker
 
 From the repo root:
@@ -89,8 +100,11 @@ database rather than mocked responses, to get genuine integration coverage of th
 1. Runs `web-api/scripts/init_e2e_db.py` (via Playwright's `globalSetup`) to create/migrate a
    dedicated `living_genie_e2e` database on the same Postgres instance used for local dev — your
    dev database is never touched. Override the target with `E2E_DATABASE_URL`.
-2. Builds the frontend and serves it with `vite preview` on port 4173.
-3. Starts `web-api` (`uv run uvicorn`) on port 8000, pointed at the `living_genie_e2e` database.
+2. Builds the frontend and serves it with `vite preview` on port 4183 (dedicated to e2e, distinct
+   from the normal dev port 5173, so it can never collide with an already-running dev server).
+3. Starts `web-api` (`uv run uvicorn`) on port 8100 (likewise dedicated to e2e, distinct from the
+   normal dev port 8000), pointed at the `living_genie_e2e` database. Override the ports with
+   `E2E_WEB_PORT`/`E2E_API_PORT`.
 4. Runs the specs under `e2e/` against that stack in a real Chromium browser.
 
 Requires Postgres reachable at `localhost:5432` (`docker compose up -d postgres` from the repo

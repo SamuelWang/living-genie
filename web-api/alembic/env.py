@@ -9,6 +9,7 @@ from app.db import Base
 from app.models import (  # noqa: F401  (registers the models on Base.metadata)
     Conversation,
     DiaryEntry,
+    EmailToken,
     EmbeddingJob,
     Message,
     MessageReference,

@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { toast, toastManager } from '@/lib/toast';
 import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router';
 
 export function RootLayout() {
   const { t } = useTranslation();
@@ -31,7 +31,9 @@ export function RootLayout() {
       <div className="flex h-screen flex-col bg-background text-foreground">
         <header className="flex items-center justify-between border-b p-4">
           <div className="flex items-center gap-6">
-            <span className="font-semibold">{t('app.name')}</span>
+            <Link to={user ? '/diaries' : '/login'} className="font-semibold hover:underline">
+              {t('app.name')}
+            </Link>
             {user && (
               <nav className="flex items-center gap-4">
                 <NavLink

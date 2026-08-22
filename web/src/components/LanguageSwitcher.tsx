@@ -1,5 +1,8 @@
 import { useTranslation } from 'react-i18next';
+import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import { updateLocale } from '@/api/auth';
+import { useAuth } from '@/hooks/useAuth';
 
 const LOCALES = [
   { code: 'zh-Hant', label: '中文' },
@@ -8,6 +11,16 @@ const LOCALES = [
 
 export function LanguageSwitcher() {
   const { i18n } = useTranslation();
+  const { user } = useAuth();
+  const updateLocaleMutation = useMutation({ mutationFn: updateLocale });
+
+  const handleChange = (code: (typeof LOCALES)[number]['code']) => {
+    void i18n.changeLanguage(code);
+    if (user) {
+      updateLocaleMutation.mutate({ locale: code });
+    }
+  };
+
   return (
     <div className="flex gap-1">
       {LOCALES.map(({ code, label }) => (
@@ -15,7 +28,7 @@ export function LanguageSwitcher() {
           key={code}
           variant={i18n.resolvedLanguage === code ? 'default' : 'outline'}
           size="sm"
-          onClick={() => i18n.changeLanguage(code)}
+          onClick={() => handleChange(code)}
         >
           {label}
         </Button>

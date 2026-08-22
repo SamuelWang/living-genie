@@ -8,12 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { register } from '@/api/auth';
 import { ApiError } from '@/api/errors';
+import { PASSWORD_MIN_LENGTH } from '@/lib/auth';
 import { toast } from '@/lib/toast';
 
-const PASSWORD_MIN_LENGTH = 8;
-
 export function RegisterPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,11 +31,11 @@ export function RegisterPage() {
     if (!emailValid || !passwordValid) return;
 
     registerMutation.mutate(
-      { email, password },
+      { email, password, locale: i18n.resolvedLanguage ?? 'zh-Hant' },
       {
         onSuccess: () => {
           toast.success(t('auth.registerSuccess'));
-          void navigate('/login', { replace: true });
+          void navigate(`/verify-email?email=${encodeURIComponent(email)}`, { replace: true });
         },
         onError: (err) => {
           const message =
