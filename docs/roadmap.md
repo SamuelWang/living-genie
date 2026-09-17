@@ -27,3 +27,13 @@
 - Let users reset a forgotten password via an emailed link.
 - Store the user's language preference on their account so verification/reset emails (and
   future account-wide content) can be sent in it.
+
+## v0.5.0
+
+- Add structured logging across the backend and worker, replacing ad-hoc console logging.
+- Add a self-hosted observability stack (Prometheus, Loki, Tempo, Grafana) for metrics, log
+  aggregation, and distributed tracing.
+- Instrument the backend and worker with request/job metrics and distributed traces across the
+  API, worker, Postgres, Qdrant, and Ollama calls, including stage-level spans for the chat/RAG
+  pipeline and the indexing worker's chunk/embed/upsert pipeline.
+- Provide Grafana dashboards correlating logs, metrics, and traces for debugging.
