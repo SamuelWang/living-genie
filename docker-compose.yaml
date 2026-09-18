@@ -93,6 +93,8 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       QDRANT_URL: http://qdrant:6333
       OLLAMA_URL: http://ollama:11434
+    expose:
+      - "9101"
     command: ["sh", "-c", "uv sync --frozen && python -m app.worker"]
     healthcheck:
       disable: true

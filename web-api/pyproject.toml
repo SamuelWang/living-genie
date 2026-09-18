@@ -13,7 +13,14 @@ dependencies = [
     "email-validator>=2.2.0",
     "fastapi>=0.139.2",
     "ollama>=0.6.2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-httpx>=0.65b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+    "opentelemetry-sdk>=1.44.0",
     "pillow>=11.0.0",
+    "prometheus-client>=0.26.0",
+    "prometheus-fastapi-instrumentator>=8.1.0",
     "psycopg[binary]>=3.3.4",
     "pwdlib[argon2]>=0.2.1",
     "pydantic-settings>=2.14.2",
@@ -21,6 +28,7 @@ dependencies = [
     "qdrant-client>=1.18.0",
     "sqlalchemy>=2.0.51",
     "sse-starlette>=3.2.0",
+    "structlog>=26.1.0",
     "uvicorn[standard]>=0.51.0",
 ]
 
