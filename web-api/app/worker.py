@@ -1,10 +1,13 @@
 import time
 
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from prometheus_client import Counter, Histogram, start_http_server
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.chunking import chunk_text
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.embeddings import embed_texts
 from app.models import DiaryEntry, EmbeddingJob, Todo
 from app.observability import configure_logging, configure_tracing, get_logger
@@ -12,6 +15,17 @@ from app.settings import get_settings
 from app.vector_store import ensure_collection, upsert_chunks
 
 logger = get_logger(__name__)
+
+JOB_COUNTER = Counter(
+    "living_genie_worker_jobs_total",
+    "Embedding jobs processed by the worker, broken down by source type and final status.",
+    ["source_type", "status"],
+)
+JOB_DURATION = Histogram(
+    "living_genie_worker_job_duration_seconds",
+    "Duration of the chunk/embed/upsert stage of embedding job processing, by source type.",
+    ["source_type"],
+)
 
 
 def reset_stuck_jobs(db: Session) -> int:
@@ -47,6 +61,7 @@ def process_next_job(db: Session) -> bool:
         return True
 
     settings = get_settings()
+    start = time.perf_counter()
     try:
         if job.source_type == "diary_entry":
             composed = f"{source.title}\n\n{source.content}" if source.content else source.title
@@ -68,6 +83,9 @@ def process_next_job(db: Session) -> bool:
     except Exception as exc:
         db.rollback()
         _fail_job(db, job.id, exc)
+    finally:
+        JOB_DURATION.labels(source_type=job.source_type).observe(time.perf_counter() - start)
+        JOB_COUNTER.labels(source_type=job.source_type, status=job.status).inc()
 
     return True
 
@@ -111,6 +129,9 @@ def run_forever() -> None:
 def main() -> None:
     configure_tracing("worker")
     configure_logging()
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+    HTTPXClientInstrumentor().instrument()
+    start_http_server(get_settings().worker_metrics_port)
     startup()
     run_forever()
 
