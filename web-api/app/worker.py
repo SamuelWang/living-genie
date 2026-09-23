@@ -1,4 +1,3 @@
-import logging
 import time
 
 from sqlalchemy import select, update
@@ -8,10 +7,11 @@ from app.chunking import chunk_text
 from app.db import SessionLocal
 from app.embeddings import embed_texts
 from app.models import DiaryEntry, EmbeddingJob, Todo
+from app.observability import configure_logging, configure_tracing, get_logger
 from app.settings import get_settings
 from app.vector_store import ensure_collection, upsert_chunks
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def reset_stuck_jobs(db: Session) -> int:
@@ -109,7 +109,8 @@ def run_forever() -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    configure_tracing("worker")
+    configure_logging()
     startup()
     run_forever()
 

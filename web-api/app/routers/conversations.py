@@ -1,5 +1,4 @@
 import json
-import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,6 +16,7 @@ from app.chat import (
 from app.db import SessionLocal, get_db
 from app.embeddings import embed_texts
 from app.models import Conversation, DiaryEntry, Message, MessageReference, Todo, User
+from app.observability import get_logger
 from app.schemas import (
     ConversationDetailRead,
     ConversationRead,
@@ -29,7 +29,7 @@ from app.settings import get_settings
 from app.todo_tools import execute_tool
 from app.vector_store import search as vector_search
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 

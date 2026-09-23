@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,11 +5,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from app.db import get_db
-from app.routers import auth, conversations, diaries, todos, uploads
-from app.settings import get_settings
+from app.observability import configure_logging, configure_tracing, get_logger
 
-logger = logging.getLogger(__name__)
+configure_tracing("web-api")
+configure_logging()
+
+from app.db import get_db  # noqa: E402
+from app.routers import auth, conversations, diaries, todos, uploads  # noqa: E402
+from app.settings import get_settings  # noqa: E402
+
+logger = get_logger(__name__)
 
 _settings = get_settings()
 

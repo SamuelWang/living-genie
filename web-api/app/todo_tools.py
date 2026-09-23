@@ -1,5 +1,4 @@
 import difflib
-import logging
 import uuid
 from datetime import date
 from typing import Any, Callable
@@ -8,9 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import EmbeddingJob, Todo
+from app.observability import get_logger
 from app.vector_store import delete_source_points
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 TODO_TOOLS: list[dict] = [
     {
