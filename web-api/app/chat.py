@@ -3,6 +3,8 @@ import uuid
 from datetime import date, timedelta
 from typing import Callable, Iterator
 
+from opentelemetry import trace
+
 from app.embeddings import get_ollama_client
 from app.models import Message
 from app.observability import get_logger
@@ -10,6 +12,7 @@ from app.settings import get_settings
 from app.todo_tools import TODO_TOOLS
 
 logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 _NO_CONTEXT_MARKER = "No relevant diary excerpts were found for this message."
 _NO_HISTORY_MARKER = "(no earlier messages in this conversation)"
@@ -147,15 +150,17 @@ def run_chat_with_tools(
     hard_failures: list[str] = []
     pending_action: dict | None = None
 
-    for _ in range(settings.chat_tool_max_iterations):
-        response = client.chat(
-            model=settings.ollama_chat_model,
-            messages=messages,
-            tools=TODO_TOOLS,
-            stream=False,
-            think=settings.ollama_chat_think,
-            options=tool_options,
-        )
+    for iteration in range(1, settings.chat_tool_max_iterations + 1):
+        with tracer.start_as_current_span("chat.ollama_call") as span:
+            span.set_attribute("chat.iteration", iteration)
+            response = client.chat(
+                model=settings.ollama_chat_model,
+                messages=messages,
+                tools=TODO_TOOLS,
+                stream=False,
+                think=settings.ollama_chat_think,
+                options=tool_options,
+            )
         message = response.message
         if not message.tool_calls:
             break

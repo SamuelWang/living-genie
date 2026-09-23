@@ -2,6 +2,8 @@ import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from opentelemetry import trace
+from prometheus_client import Histogram
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from sse_starlette import EventSourceResponse
@@ -30,10 +32,16 @@ from app.todo_tools import execute_tool
 from app.vector_store import search as vector_search
 
 logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 _PREVIEW_MAX_LENGTH = 120
+
+RAG_RETRIEVAL_LATENCY = Histogram(
+    "living_genie_rag_retrieval_seconds",
+    "Latency of the Qdrant similarity-search step of RAG retrieval.",
+)
 
 
 def _get_conversation_or_404(
@@ -243,8 +251,11 @@ def send_message(
             conversation.pending_action = None
             db.commit()
 
-            query_vector = embed_texts([payload.content], kind="query")[0]
-            points = vector_search(current_user.id, query_vector, settings.retrieval_top_k)
+            with tracer.start_as_current_span("chat.embed_query"):
+                query_vector = embed_texts([payload.content], kind="query")[0]
+
+            with tracer.start_as_current_span("chat.qdrant_search"), RAG_RETRIEVAL_LATENCY.time():
+                points = vector_search(current_user.id, query_vector, settings.retrieval_top_k)
 
             retrieved_chunks: list[dict] = []
             for point in points:
@@ -271,8 +282,9 @@ def send_message(
                 )
             )
 
-            system_prompt = build_system_prompt()
-            user_prompt = build_user_prompt(payload.content, retrieved_chunks, recent_turns)
+            with tracer.start_as_current_span("chat.build_prompt"):
+                system_prompt = build_system_prompt()
+                user_prompt = build_user_prompt(payload.content, retrieved_chunks, recent_turns)
 
             def execute_tool_call(name: str, arguments: dict) -> dict:
                 return execute_tool(db, current_user.id, name, arguments)

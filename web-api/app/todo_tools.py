@@ -3,6 +3,8 @@ import uuid
 from datetime import date
 from typing import Any, Callable
 
+from opentelemetry import trace
+from prometheus_client import Counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,13 @@ from app.observability import get_logger
 from app.vector_store import delete_source_points
 
 logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
+
+TOOL_CALL_COUNTER = Counter(
+    "living_genie_tool_calls_total",
+    "Todo tool calls, broken down by tool name and whether user_confirmed gated them.",
+    ["tool_name", "user_confirmed"],
+)
 
 TODO_TOOLS: list[dict] = [
     {
@@ -308,8 +317,19 @@ def execute_tool(db: Session, user_id: uuid.UUID, name: str, arguments: dict[str
     handler = _HANDLERS.get(name)
     if handler is None:
         return {"ok": False, "message": f"Unknown tool '{name}'."}
-    try:
-        return handler(db, user_id, **arguments)
-    except TypeError:
-        logger.warning("Bad arguments for tool %s: %r", name, arguments)
-        return {"ok": False, "message": "Invalid arguments for this tool call."}
+
+    user_confirmed = bool(arguments.get("user_confirmed", False))
+    with tracer.start_as_current_span("chat.tool_call") as span:
+        span.set_attribute("tool.name", name)
+        span.set_attribute("tool.user_confirmed", user_confirmed)
+        try:
+            result = handler(db, user_id, **arguments)
+        except TypeError:
+            logger.warning("Bad arguments for tool %s: %r", name, arguments)
+            result = {"ok": False, "message": "Invalid arguments for this tool call."}
+        span.set_attribute("tool.gated", result.get("reason") == "needs_confirmation")
+
+    TOOL_CALL_COUNTER.labels(
+        tool_name=name, user_confirmed=str(user_confirmed).lower()
+    ).inc()
+    return result
