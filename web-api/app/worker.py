@@ -1,5 +1,6 @@
 import time
 
+from opentelemetry import trace
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from prometheus_client import Counter, Histogram, start_http_server
@@ -15,6 +16,7 @@ from app.settings import get_settings
 from app.vector_store import ensure_collection, upsert_chunks
 
 logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
 
 JOB_COUNTER = Counter(
     "living_genie_worker_jobs_total",
@@ -61,23 +63,34 @@ def process_next_job(db: Session) -> bool:
         return True
 
     settings = get_settings()
+    span_attrs = {"source_type": job.source_type, "source_id": str(job.source_id)}
     start = time.perf_counter()
     try:
-        if job.source_type == "diary_entry":
-            composed = f"{source.title}\n\n{source.content}" if source.content else source.title
-            chunks = chunk_text(
-                composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+        # Each stage span records the exception and sets ERROR status as it propagates out, before
+        # the except block's failure bookkeeping runs, so a failed job's trace shows its stage.
+        with _stage_span("job.chunk", span_attrs):
+            if job.source_type == "diary_entry":
+                composed = (
+                    f"{source.title}\n\n{source.content}" if source.content else source.title
+                )
+                chunks = chunk_text(
+                    composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+                )
+                source_date = source.entry_date
+            else:
+                status_text = "done" if source.completed else "pending"
+                composed = f"{source.title}\n{source.description or ''}\nStatus: {status_text}"
+                chunks = chunk_text(
+                    composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+                )
+                source_date = source.due_date or source.created_at.date()
+        with _stage_span("job.embed_chunks", span_attrs) as span:
+            span.set_attribute("chunk_count", len(chunks))
+            vectors = embed_texts(chunks, kind="passage") if chunks else []
+        with _stage_span("job.qdrant_upsert", span_attrs):
+            upsert_chunks(
+                job.source_type, job.source_id, source.user_id, source_date, chunks, vectors
             )
-            source_date = source.entry_date
-        else:
-            status_text = "done" if source.completed else "pending"
-            composed = f"{source.title}\n{source.description or ''}\nStatus: {status_text}"
-            chunks = chunk_text(
-                composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
-            )
-            source_date = source.due_date or source.created_at.date()
-        vectors = embed_texts(chunks, kind="passage") if chunks else []
-        upsert_chunks(job.source_type, job.source_id, source.user_id, source_date, chunks, vectors)
         job.status = "completed"
         db.commit()
     except Exception as exc:
@@ -88,6 +101,12 @@ def process_next_job(db: Session) -> bool:
         JOB_COUNTER.labels(source_type=job.source_type, status=job.status).inc()
 
     return True
+
+
+def _stage_span(name: str, attributes: dict[str, str]):
+    return tracer.start_as_current_span(
+        name, attributes=attributes, record_exception=True, set_status_on_exception=True
+    )
 
 
 def _fail_job(db: Session, job_id, exc: Exception) -> None:
