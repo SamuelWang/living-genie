@@ -25,8 +25,9 @@ config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# This line sets up loggers basically. Skipped when the caller already configured logging and runs
+# migrations in-process (the test suite), since fileConfig would replace the root logger's handlers.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata

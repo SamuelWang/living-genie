@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import structlog
 from opentelemetry import trace
@@ -52,7 +53,7 @@ def configure_logging() -> None:
         cache_logger_on_first_use=True,
     )
 
-    stdout_handler = logging.StreamHandler()
+    stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(
             foreign_pre_chain=shared_processors,
