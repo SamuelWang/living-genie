@@ -36,8 +36,33 @@ def _add_trace_context(logger, method_name, event_dict):
     return event_dict
 
 
-def configure_logging() -> None:
-    settings = get_settings()
+# Container healthchecks and Prometheus scrapes hit these every few seconds; their access lines
+# would drown out real requests in Loki (their traffic is still visible in the request metrics).
+_PROBE_PATHS = frozenset({"/health", "/metrics"})
+
+
+def _drop_probe_access_logs(record: logging.LogRecord) -> bool:
+    # uvicorn.access records carry (client_addr, method, full_path, http_version, status_code).
+    args = record.args
+    if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+        return args[2].split("?", 1)[0] not in _PROBE_PATHS
+    return True
+
+
+def _route_uvicorn_loggers() -> None:
+    # uvicorn applies its own dictConfig before importing the app, giving these loggers plain-text
+    # handlers with propagate=False; hand them over to the root logger's structured handlers.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+    logging.getLogger("uvicorn.access").addFilter(_drop_probe_access_logs)
+
+
+def configure_logging(export: bool = True) -> None:
+    """Routes stdlib and structlog logging to JSON lines on stdout and, when `export` is set, to
+    the OTLP endpoint too. `export=False` is for short-lived CLI processes (alembic), which would
+    otherwise stall on exit retrying the export when no collector is reachable."""
     shared_processors = [
         structlog.contextvars.merge_contextvars,
         _add_trace_context,
@@ -64,17 +89,22 @@ def configure_logging() -> None:
         )
     )
 
-    resource = trace.get_tracer_provider().resource
-    logger_provider = LoggerProvider(resource=resource)
-    log_exporter = OTLPLogExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True)
-    logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
-    set_logger_provider(logger_provider)
-    otel_handler = LoggingHandler(logger_provider=logger_provider)
-
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(stdout_handler)
-    root_logger.addHandler(otel_handler)
+
+    if export:
+        settings = get_settings()
+        resource = trace.get_tracer_provider().resource
+        logger_provider = LoggerProvider(resource=resource)
+        log_exporter = OTLPLogExporter(
+            endpoint=settings.otel_exporter_otlp_endpoint, insecure=True
+        )
+        logger_provider.add_log_record_processor(BatchLogRecordProcessor(log_exporter))
+        set_logger_provider(logger_provider)
+        root_logger.addHandler(LoggingHandler(logger_provider=logger_provider))
+
+    _route_uvicorn_loggers()
 
 
 def get_logger(name: str):

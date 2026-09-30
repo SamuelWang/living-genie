@@ -30,6 +30,11 @@ def _create_entry(authed_user: AuthedUser) -> uuid.UUID:
     return uuid.UUID(resp.json()["id"])
 
 
+def _job_span(span_exporter):
+    (job_span,) = [s for s in span_exporter.get_finished_spans() if s.name == "job.process"]
+    return job_span
+
+
 def _stage_spans(span_exporter) -> dict:
     return {
         span.name: span
@@ -80,6 +85,25 @@ def test_worker_job_emits_stage_spans_tagged_with_source(
         assert span.status.status_code != StatusCode.ERROR
     assert spans["job.embed_chunks"].attributes["chunk_count"] >= 1
 
+    # One trace per job: every stage, and the job's own Postgres bookkeeping, hangs off the
+    # job.process root span.
+    job_span = _job_span(span_exporter)
+    assert job_span.parent is None
+    assert job_span.attributes["source_type"] == "diary_entry"
+    assert job_span.attributes["source_id"] == str(entry_id)
+    assert job_span.attributes["job.status"] == "completed"
+    trace_id = job_span.context.trace_id
+    in_trace = [s for s in span_exporter.get_finished_spans() if s.context.trace_id == trace_id]
+    assert {s.name for s in in_trace} >= {"job.process", *_STAGE_SPANS}
+    assert any(s.attributes.get("db.system") == "postgresql" for s in in_trace)
+    for span in spans.values():
+        assert span.parent.span_id == job_span.context.span_id
+
+
+def test_idle_worker_poll_exports_no_spans(db_session: Session, span_exporter):
+    assert worker.process_next_job(db_session) is False
+    assert span_exporter.get_finished_spans() == ()
+
 
 def test_failed_worker_job_records_exception_on_failing_stage_span(
     authed_user_real_commits: AuthedUser, fake_vector_store, fake_ollama_client, span_exporter
@@ -105,3 +129,9 @@ def test_failed_worker_job_records_exception_on_failing_stage_span(
 
     assert spans["job.chunk"].status.status_code != StatusCode.ERROR
     assert spans["job.embed_chunks"].status.status_code != StatusCode.ERROR
+
+    # The failing stage sits in the same trace as the job's root span, which is marked failed too.
+    job_span = _job_span(span_exporter)
+    assert upsert.context.trace_id == job_span.context.trace_id
+    assert job_span.status.status_code == StatusCode.ERROR
+    assert job_span.attributes["job.status"] == "pending"  # first attempt; will be retried

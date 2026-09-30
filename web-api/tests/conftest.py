@@ -77,8 +77,8 @@ def _test_database():
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
 
-    # configure_logger=False keeps alembic/env.py from calling fileConfig, which would otherwise
-    # wipe the structlog/OTel root handlers app.main installed at import.
+    # configure_logger=False keeps alembic/env.py from configuring logging again on top of the
+    # structlog/OTel root handlers app.main already installed at import.
     alembic_cfg = Config(
         str(WEB_API_ROOT / "alembic.ini"), attributes={"configure_logger": False}
     )

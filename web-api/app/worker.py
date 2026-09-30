@@ -3,6 +3,8 @@ import time
 from opentelemetry import trace
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.instrumentation.utils import suppress_instrumentation
+from opentelemetry.trace import Span, Status, StatusCode
 from prometheus_client import Counter, Histogram, start_http_server
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -46,11 +48,29 @@ def process_next_job(db: Session) -> bool:
         .limit(1)
         .with_for_update(skip_locked=True)
     )
-    job = db.scalars(stmt).first()
-    if job is None:
-        db.rollback()
-        return False
+    # Polling is untraced: otherwise every idle poll exports its own single-span SELECT trace,
+    # burying the real job traces in Tempo.
+    with suppress_instrumentation():
+        job = db.scalars(stmt).first()
+        if job is None:
+            db.rollback()
+            return False
 
+    # One root span per job, so the status bookkeeping queries and every stage span (with their
+    # Postgres/Ollama/Qdrant children) land in a single trace.
+    with tracer.start_as_current_span(
+        "job.process",
+        attributes={
+            "job.id": str(job.id),
+            "source_type": job.source_type,
+            "source_id": str(job.source_id),
+        },
+    ) as job_span:
+        _process_job(db, job, job_span)
+    return True
+
+
+def _process_job(db: Session, job: EmbeddingJob, job_span: Span) -> None:
     job.status = "processing"
     db.commit()
 
@@ -60,7 +80,8 @@ def process_next_job(db: Session) -> bool:
         source = db.get(Todo, job.source_id)
     if source is None:
         logger.info("%s %s gone; skipping job %s", job.source_type, job.source_id, job.id)
-        return True
+        job_span.set_attribute("job.status", "skipped")
+        return
 
     settings = get_settings()
     span_attrs = {"source_type": job.source_type, "source_id": str(job.source_id)}
@@ -95,12 +116,12 @@ def process_next_job(db: Session) -> bool:
         db.commit()
     except Exception as exc:
         db.rollback()
+        job_span.set_status(Status(StatusCode.ERROR, str(exc)))
         _fail_job(db, job.id, exc)
     finally:
         JOB_DURATION.labels(source_type=job.source_type).observe(time.perf_counter() - start)
         JOB_COUNTER.labels(source_type=job.source_type, status=job.status).inc()
-
-    return True
+        job_span.set_attribute("job.status", job.status)
 
 
 def _stage_span(name: str, attributes: dict[str, str]):
