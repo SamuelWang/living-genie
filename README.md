@@ -16,6 +16,10 @@ models, with no external API calls.
 - **AI / retrieval** — Ollama for local LLM inference (embedding + chat models) and Qdrant as
   the vector store for diary and todo embeddings, with a background worker handling asynchronous
   chunking and indexing.
+- **Observability** — structured logs, Prometheus metrics, and OpenTelemetry traces from the
+  backend and worker, collected by a self-hosted Prometheus, Loki, Tempo, and Grafana stack (with
+  Grafana Alloy as the OTLP collector). No external accounts are needed and no telemetry leaves
+  the host.
 
 Each of these runs as its own Docker container, orchestrated locally via Docker Compose. See
 [docs/architecture.md](docs/architecture.md) for the full technical design.
@@ -40,6 +44,12 @@ Once healthy, the frontend is at `http://localhost:5173` and the backend API is 
 instance, which catches account verification and password-reset emails instead of sending them
 for real — view them at `http://localhost:8025`. In production, point the `SMTP_*` env vars in
 `web-api/.env` at a real provider instead.
+
+Grafana is at `http://localhost:3000` (log in with `GRAFANA_ADMIN_USER`/`GRAFANA_ADMIN_PASSWORD`
+from `.env`, `admin`/`admin` by default), pre-provisioned with the Prometheus, Loki, and Tempo data
+sources and a "Living Genie overview" dashboard. Prometheus is at `http://localhost:9090`.
+Retention, the OTLP endpoint, and the trace sampling rate are set in `web-api/.env` (see
+[web-api/README.md](web-api/README.md#configuration)).
 
 For local (non-Docker) development, running tests, and full configuration reference, see
 [web/README.md](web/README.md) and [web-api/README.md](web-api/README.md).
