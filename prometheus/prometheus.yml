@@ -1,0 +1,15 @@
+# Retention is set by the --storage.tsdb.retention.time flag in docker-compose.yaml
+# (PROMETHEUS_RETENTION), since Prometheus config files don't support env-var expansion.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: web-api
+    static_configs:
+      - targets: ["web-api:8000"]
+
+  # Port must match WORKER_METRICS_PORT and the worker service's `expose` in docker-compose.yaml.
+  - job_name: worker
+    static_configs:
+      - targets: ["worker:9101"]

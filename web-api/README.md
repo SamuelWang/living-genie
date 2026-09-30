@@ -86,6 +86,12 @@ the source of truth for local defaults:
 | `PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS` | `60`           | Minimum interval between password-reset email sends to the same account           |
 | `EMAIL_CODE_LENGTH`     | `8`                              | Length of generated verification/reset codes                                      |
 | `EMAIL_CODE_MAX_ATTEMPTS` | `5`                            | Incorrect code attempts allowed before a code is invalidated                      |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://alloy:4317`       | OTLP gRPC endpoint that traces and logs are exported to (Grafana Alloy in Compose) |
+| `OTEL_TRACES_SAMPLER_RATIO` | `1.0`                        | Fraction of traces sampled (`TraceIdRatioBased`); `1.0` samples everything         |
+| `WORKER_METRICS_PORT`   | `9101`                          | Port of the worker's Prometheus `/metrics` server (Prometheus's scrape target is hardcoded to match) |
+| `PROMETHEUS_RETENTION`  | `15d`                           | Prometheus TSDB retention; read by the `prometheus` Compose service               |
+| `LOKI_RETENTION_PERIOD` | `168h`                          | Loki log retention; read by the `loki` Compose service                            |
+| `TEMPO_RETENTION`       | `336h`                          | Tempo trace retention; read by the `tempo` Compose service                        |
 
 ## Database & migrations
 

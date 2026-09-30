@@ -1,0 +1,36 @@
+# Loaded with -config.expand-env=true, so ${VAR:-default} references resolve from the environment.
+# Single-binary mode; traces arrive via OTLP gRPC from Alloy.
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/traces
+
+# Tempo 3.x schedules retention via the backend scheduler and executes it in the backend worker;
+# both carry a block_retention, so keep them in sync.
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: ${TEMPO_RETENTION:-336h}
+
+backend_worker:
+  compaction:
+    block_retention: ${TEMPO_RETENTION:-336h}
+
+usage_report:
+  reporting_enabled: false

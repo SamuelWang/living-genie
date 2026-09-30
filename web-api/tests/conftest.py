@@ -25,6 +25,16 @@ os.environ["UPLOADS_DIR"] = str(_TEST_UPLOADS_DIR)
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from opentelemetry import trace  # noqa: E402
+from opentelemetry._logs import get_logger_provider  # noqa: E402
+from opentelemetry.sdk._logs.export import (  # noqa: E402
+    InMemoryLogRecordExporter,
+    SimpleLogRecordProcessor,
+)
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E402
+    InMemorySpanExporter,
+)
 from sqlalchemy import event, text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
@@ -67,7 +77,11 @@ def _test_database():
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
 
-    alembic_cfg = Config(str(WEB_API_ROOT / "alembic.ini"))
+    # configure_logger=False keeps alembic/env.py from configuring logging again on top of the
+    # structlog/OTel root handlers app.main already installed at import.
+    alembic_cfg = Config(
+        str(WEB_API_ROOT / "alembic.ini"), attributes={"configure_logger": False}
+    )
     alembic_cfg.set_main_option("script_location", str(WEB_API_ROOT / "alembic"))
     command.upgrade(alembic_cfg, "head")
 
@@ -80,6 +94,35 @@ def _uploads_dir():
     _TEST_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     yield
     shutil.rmtree(_TEST_UPLOADS_DIR, ignore_errors=True)
+
+
+# app.main already installed the global tracer/logger providers (OTel only allows setting them
+# once), so tests attach an in-memory exporter to those existing providers instead of replacing
+# them. Simple (synchronous) processors make finished spans/logs visible immediately.
+@pytest.fixture(scope="session")
+def _session_span_exporter() -> InMemorySpanExporter:
+    exporter = InMemorySpanExporter()
+    trace.get_tracer_provider().add_span_processor(SimpleSpanProcessor(exporter))
+    return exporter
+
+
+@pytest.fixture
+def span_exporter(_session_span_exporter: InMemorySpanExporter) -> InMemorySpanExporter:
+    _session_span_exporter.clear()
+    return _session_span_exporter
+
+
+@pytest.fixture(scope="session")
+def _session_log_exporter() -> InMemoryLogRecordExporter:
+    exporter = InMemoryLogRecordExporter()
+    get_logger_provider().add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    return exporter
+
+
+@pytest.fixture
+def log_exporter(_session_log_exporter: InMemoryLogRecordExporter) -> InMemoryLogRecordExporter:
+    _session_log_exporter.clear()
+    return _session_log_exporter
 
 
 @pytest.fixture

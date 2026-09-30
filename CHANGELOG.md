@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-09-30
+
+### Added
+
+- Structured JSON logging for `web-api` and `worker` through one shared setup, replacing ad-hoc
+  stdlib logging: every line carries timestamp, level, logger name, and message, plus the trace
+  and span ID when emitted inside a request or job. Logs still go to stdout and are also shipped
+  to Loki, searchable in Grafana.
+- Prometheus metrics endpoints: `web-api`'s `/metrics` (per-route request count, errors, and
+  latency) and a `worker` metrics server (jobs processed and job duration by `source_type`), plus
+  chat-specific metrics for tool calls (by tool name and whether `user_confirmed` gated them) and
+  RAG retrieval latency.
+- OpenTelemetry distributed tracing for `web-api` and `worker`, with child spans for Postgres,
+  Qdrant, and Ollama calls, so a request or job's time can be broken down by where it was spent.
+- Named spans for each stage of the chat/RAG pipeline — query embedding, Qdrant search, prompt
+  build, each Ollama call in the tool-calling loop (with its iteration number), and each tool
+  execution (with whether it ran or was held for confirmation) — without recording conversation
+  content.
+- One trace per indexing job, with its own spans for chunking, embedding, and the Qdrant upsert;
+  a failed job's trace marks the stage it failed at, matching the job's `error_message`.
+- A self-hosted observability stack in Docker Compose — Prometheus, Loki, Tempo, Grafana, and
+  Grafana Alloy as the single OTLP collector — with Grafana pre-provisioned with all three data
+  sources, a starter "Living Genie overview" dashboard, and trace-to-logs links, so
+  `docker compose up` needs no manual setup and no telemetry leaves the host.
+- Environment-variable configuration for the OTLP exporter endpoint, trace sampling rate, worker
+  metrics port, and Prometheus/Loki/Tempo retention periods.
+
 ## [0.4.0] - 2026-08-20
 
 ### Added

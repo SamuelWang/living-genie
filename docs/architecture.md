@@ -29,7 +29,9 @@ breakdown and the [requirements](requirements/) docs for phase-by-phase function
 
 All components run as separate Docker containers, orchestrated locally via Docker Compose. Both
 the backend (for synchronous chat queries) and the indexing worker (for background chunking/
-embedding) call Ollama and Qdrant directly — neither proxies through the other.
+embedding) call Ollama and Qdrant directly — neither proxies through the other. Both also send
+logs, metrics, and traces to a self-hosted Prometheus/Loki/Tempo/Grafana stack (not shown). See
+[Observability](#observability).
 
 ## Frontend
 
@@ -48,13 +50,11 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
 - **i18n**: [react-i18next](https://react.i18next.com/) with `i18next-browser-languagedetector`
   for first-visit browser-locale detection. Supported locales: `zh-Hant` (default/fallback) and
   `en`. Translation strings live under `web/src/locales/{lng}/translation.json`, loaded eagerly
-  (small string set at this scale). The detected/selected locale is persisted to `localStorage`;
-  starting in v0.4.0 it's also synced to the account (`PUT /auth/locale`) whenever a signed-in
-  user changes language — see
-  [Email verification & password reset](#email-verification--password-reset) — though a
-  signed-out visitor's choice still only affects `localStorage`, since there's no account yet to
-  save it to. A language-switcher component (e.g. in the nav) lets the user override the language
-  at any time.
+  (small string set at this scale). The detected/selected locale is persisted to `localStorage`,
+  and synced to the account (`PUT /auth/locale`) whenever a signed-in user changes language — see
+  [Email verification & password reset](#email-verification--password-reset); a signed-out
+  visitor's choice only affects `localStorage`. A `LanguageSwitcher` component in the header
+  (`RootLayout`) lets the user override the language at any time.
 - **Testing**:
   - Vitest + React Testing Library for unit/component tests
   - Playwright for integration/e2e tests of key flows (diary CRUD end-to-end through the UI)
@@ -81,14 +81,13 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   user's own data. `POST /auth/logout` deletes the session server-side, which a stateless token couldn't
   support. Passwords are hashed with `pwdlib` (Argon2). **Deployment constraint**: because
   `SameSite=Lax` cookies are only sent for same-site requests (same registrable domain, any port),
-  the frontend and backend must be deployed under the same site — this replaces the
-  origin-agnostic nature the earlier JWT-bearer approach had. CORS is configured with
+  the frontend and backend must be deployed under the same site. CORS is configured with
   `allow_credentials=True` and an explicit `frontend_origin` (not `*`, which the browser rejects
   for credentialed requests) so the cookie is actually sent/accepted across the frontend/backend
-  ports. Starting in v0.4.0, `POST /auth/register` no longer implies the account can log in right
-  away: the created account is unverified until its emailed one-time code is used, and
-  `POST /auth/login` returns `403` for a correct password against an unverified account (distinct
-  from the `401` used for wrong credentials) rather than issuing a session. `POST /auth/verify-email`
+  ports. An account created by `POST /auth/register` is unverified until its emailed one-time code
+  is used, and `POST /auth/login` returns `403` for a correct password against an unverified
+  account (distinct from the `401` used for wrong credentials) rather than issuing a session.
+  `POST /auth/verify-email`
   auto-logs-in on success — issuing a session and setting the cookie exactly as `/auth/login` does
   — since the user has just proven mailbox ownership via the exact browser flow they started.
   `POST /auth/reset-password` does not: it deletes every `sessions` row for that user (there's no
@@ -110,7 +109,7 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   | POST   | `/auth/resend-verification`  | Resend the verification code (same response whether or not needed)   |
   | POST   | `/auth/verify-email`         | Verify the account from an emailed one-time code, submitted with the account's email; auto-logs-in on success |
   | POST   | `/auth/forgot-password`      | Request a reset code (same response whether or not the email exists)  |
-  | POST   | `/auth/reset-password`       | Set a new password from an emailed one-time code, submitted with the account's email; auto-logs-in, revokes other sessions |
+  | POST   | `/auth/reset-password`       | Set a new password from an emailed one-time code, submitted with the account's email; revokes every session, issues no new one |
   | PUT    | `/auth/locale`                | Update the signed-in user's saved language preference                 |
 
   All endpoints below require a valid session cookie and are scoped to the authenticated user.
@@ -154,7 +153,7 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   | POST   | `/uploads/images` | Upload an image, saved to disk; returns its URL for the editor to embed as `![alt](url)` |
 
 - **Media storage**: uploaded images are saved to a directory backed by a dedicated Docker
-  volume (separate from the Postgres volume), e.g. mounted at `/app/uploads` in the backend
+  volume (`uploads_data`, separate from the Postgres volume) mounted at `/app/uploads` in the backend
   container, under a per-user subdirectory (`uploads/{user_id}/...`). Unlike a bare static-file
   mount, `GET /media/{user_id}/{filename}` is a regular authenticated endpoint: it requires a
   valid session and returns 404 (not 403) if the session's user doesn't match `{user_id}`, so both
@@ -171,9 +170,8 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   - **Already-lossless sources (PNG, BMP, TIFF, etc.)** are converted to **WebP, lossless mode**
     (`Image.save(..., "WEBP", lossless=True)`). WebP's lossless codec is consistently smaller than
     PNG's for identical pixels, so it beats simply re-optimizing PNG while staying pixel-for-pixel
-    lossless. The stored filename/URL extension becomes `.webp`; `GET /media/...` needs no code
-    change, since `FileResponse` infers `Content-Type` from the file suffix and `image/webp` is a
-    registered mimetype.
+    lossless. The stored filename/URL extension is `.webp`; `GET /media/...` serves it like any
+    other file, since `FileResponse` infers `Content-Type` from the file suffix.
   - **JPEG sources** stay JPEG rather than being converted to WebP: JPEG is already a lossy format,
     so re-encoding its decoded pixels into a lossless container would preserve the existing
     compression artifacts at a *larger* file size than the compact lossy JPEG encoding — the
@@ -182,12 +180,11 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
     `optimize=True` for smaller Huffman tables.
   - `ImageOps.exif_transpose()` is applied before stripping EXIF on either path, so the visible
     orientation is preserved even though the metadata itself is dropped for size.
-  - Compression applies at upload time only; it does not retroactively touch files already on
-    disk — no backfill/migration.
+  - Compression applies at upload time only; files already on disk are never re-encoded.
 
 - **Testing**:
-  - Unit tests for business logic
-  - Integration tests run against a real/test PostgreSQL instance (e.g. pytest)
+  - pytest: `tests/unit/` for pure logic, `tests/integration/` against a real PostgreSQL database
+    (`living_genie_test`, provisioned and migrated automatically)
   - No fixed coverage target
 
 ### Email verification & password reset
@@ -222,7 +219,7 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   subject to the same cooldown as `/auth/resend-verification`, also re-sends the verification
   email as a side effect.
 - **No auto-login on reset**: `/auth/verify-email` creates a session and sets the cookie on
-  success, exactly like `/auth/login`. `/auth/reset-password` does not — it deletes every other
+  success, exactly like `/auth/login`. `/auth/reset-password` does not — it deletes every
   session for the user but issues no new one; the resetting browser is redirected to `/login` to
   sign in with the new password.
 - **Email module**: a flat `web-api/app/email.py` (matching `embeddings.py`/`chunking.py`) built
@@ -269,23 +266,18 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   (~300M params) and explicitly multilingual-trained (100+ languages, including Chinese), which
   matters since diary content is expected to be mostly Traditional Chinese; it's pulled from
   Ollama's official library. Its query/document prompts follow EmbeddingGemma's own convention
-  (`task: search result | query: ...` / `title: none | text: ...`) prefixes — 
-  see `embed_texts()` in `web-api/app/embeddings.py`. `gemma3:4b` (Google) was the original chat
-  pin, chosen for license permissiveness and multilingual coverage after `gemma2:9b` proved too
-  large to load in reasonable time on modest/CPU-only hardware — but `gemma3:4b` doesn't support
-  Ollama's `tools` capability, which the tool-calling design below depends on. `gemma4:e2b-it-qat`
-  replaces it: `ollama show gemma4:e2b-it-qat` confirms native `tools` and `thinking` capabilities,
-  and a manual evaluation (per
-  [Ollama model evaluation](ollama-model-evaluation.md)) found acceptable warm-call latency and
-  fluent bilingual (English/Traditional Chinese) output on this project's hardware. Models are
-  pulled on first startup via a one-shot init step (a short-lived service running `ollama pull`
-  against the `ollama` service, exiting once done).
+  (`task: search result | query: ...` / `title: none | text: ...`) prefixes — see `embed_texts()`
+  in `web-api/app/embeddings.py`. `gemma4:e2b-it-qat` (Google) is used for chat: `ollama show`
+  confirms native `tools` (required by the tool-calling design below) and `thinking`
+  capabilities, and a manual evaluation (per [Ollama model evaluation](ollama-model-evaluation.md))
+  found acceptable warm-call latency and fluent bilingual (English/Traditional Chinese) output on
+  this project's hardware. Models are pulled on first startup by the one-shot `ollama-init`
+  service (`ollama pull` against the `ollama` service, exiting once done).
 
 - **Chunking**: on diary entry or todo create/update (including toggling a todo's `completed`
   flag, since that changes its embedded text), `web-api` enqueues a row in `embedding_jobs` with
   status `pending` rather than embedding inline, keeping the save request fast — see
-  [Generalizing the indexing pipeline for todos](#generalizing-the-indexing-pipeline-for-todos)
-  below.
+  [Source-generic indexing](#source-generic-indexing) below.
 
 - **Indexing worker**: a dedicated `worker` process (same build as `web-api`, different command)
   polls `embedding_jobs` for pending rows using `SELECT ... FOR UPDATE SKIP LOCKED` (safe under
@@ -299,127 +291,95 @@ embedding) call Ollama and Qdrant directly — neither proxies through the other
   if vector cleanup fails), not best-effort cleanup. This doesn't need embedding compute, so it
   doesn't go through the async job table.
 
-- **Vector store**: a single Qdrant collection. Vector size matches the embedding model's
+- **Vector store**: a single Qdrant collection, `entry_chunks`. Vector size matches the embedding model's
   dimension (768 for `embeddinggemma:300m`), using Cosine distance. Payload-indexed on `user_id` so
   every search is filtered to the requesting account, mirroring the app-level scoping already used
-  for diary, todo, and session data. See below for the exact payload shape.
+  for diary, todo, and session data. Search takes a candidate pool of
+  `RETRIEVAL_CANDIDATE_POOL_SIZE` nearest points and re-ranks them by blending cosine similarity
+  with a recency bonus (`RETRIEVAL_RECENCY_WEIGHT`, exponential decay with half-life
+  `RETRIEVAL_RECENCY_HALF_LIFE_DAYS`) before keeping the top `RETRIEVAL_TOP_K`. See
+  [Source-generic indexing](#source-generic-indexing) for the payload shape.
 
-- **Chat/RAG request flow** (`POST /conversations/{id}/messages`): embed the user's message via
-  Ollama → similarity search in Qdrant filtered to `user_id`, top-k chunks → build a prompt from
-  the retrieved chunk text plus the conversation's recent turns → call the Ollama chat model,
-  passing todo-mutating tools alongside it (see
-  [Tool-calling: managing todos through chat](#tool-calling-managing-todos-through-chat) below) →
-  streamed → persist the user message and the assistant reply (recording which sources it drew
-  from — see [Data model](#data-model)) → stream tokens to the frontend via SSE so the UI can show
-  incremental output while generation is in progress.
+- **Chat/RAG request flow** (`POST /conversations/{id}/messages`): persist the user message →
+  if the conversation has a `pending_action` that this message confirms, execute it directly (see
+  [Tool-calling](#tool-calling-managing-todos-through-chat)); otherwise embed the message via
+  Ollama → similarity search in Qdrant filtered to `user_id` → build a prompt from the retrieved
+  chunk text plus the last `CHAT_CONTEXT_TURNS` turns → run the tool-calling loop against the
+  Ollama chat model → stream the final reply to the frontend via SSE (a `references` event
+  first, then tokens) → persist the assistant reply with its source references (see
+  [Data model](#data-model)).
 
 - **Scope guarding**: the chat system prompt constrains the model to answer only from retrieved
   context (diary entries or todos) or a fixed set of app-help content (Living Genie's features,
   supported languages, etc.), and to refuse anything else with a fixed rejection message. This is
   handled at the prompt level rather than with a separate classifier model or pipeline stage,
-  keeping resource usage down and matching the project's minimal-services approach. A lightweight
-  pre-classification step is the natural fallback if prompt-level guarding proves too easy to
-  work around, but isn't needed to start.
+  keeping resource usage down and matching the project's minimal-services approach.
 
-### Generalizing the indexing pipeline for todos
+### Source-generic indexing
 
-The indexing/retrieval pipeline (`embedding_jobs`, `vector_store.py`, the worker, and the
-assistant-message reference mechanism) is generic across data sources rather than diary-specific,
-so that diary entries and todos share one mechanism instead of each needing its own copy — see
-[Future considerations](#future-considerations) for why this generality matters going forward:
+The indexing/retrieval pipeline (`embedding_jobs`, `vector_store.py`, the worker, and
+`message_references`) is shared across data sources; diary entries and todos differ only in
+`source_type`:
 
-- **`embedding_jobs`**: `diary_entry_id` is replaced by a generic `source_type` (`"diary_entry"` |
-  `"todo"`) plus `source_id` (uuid) pair — plain, unconstrained columns rather than a per-type FK.
-  This is the `source_type`/`source_id` shape the earlier "Future considerations" note already
-  anticipated, and it scales to any future third data source with no further schema change (a
-  nullable FK column per type, by contrast, would need a migration and a wider/sparser table every
-  time a source is added). This does mean the table loses DB-enforced cascade-delete, but the
-  codebase never actually relied on that here: Qdrant isn't Postgres, so cascade never covered the
-  vector-store side of cleanup anyway (the worker/deletion path already handles that explicitly,
-  above), and the worker already tolerates a since-deleted source row as an ordinary race
-  condition (`entry is None` → log and skip). A deleted diary entry or todo can leave a harmlessly
-  inert `embedding_jobs` row behind — the worker only ever acts on `pending` rows, and by the time
-  a delete happens any indexing job for that content has long since completed — the same
-  "no orphan cleanup required" tolerance the project already accepts for uploaded images.
-- **Vector store collection**: renamed `diary_chunks` → **`entry_chunks`**. Payload per point:
-  `user_id`, `source_type`, `source_id`, `chunk_index`, `chunk_text`, and a generalized `date`
-  field (renamed from `entry_date`) feeding the existing recency-rescoring math (unchanged logic —
-  exponential decay blended with cosine similarity) — for a diary entry this is its `entry_date`;
-  for a todo it's `due_date` if set, else the todo's `created_at` date, so every point has a usable
-  recency signal regardless of source. `search()`'s shape and `user_id`-only filter are unchanged;
-  it now naturally returns a mixed ranked list of diary and todo chunks for a given query.
-- **Worker**: dispatches on `job.source_type` — diary jobs chunk `DiaryEntry.content` exactly as
-  before; todo jobs chunk a composed string of the todo's title, description, and a completion
-  status line (e.g. `"Status: done"` / `"Status: pending"`), so retrieval can answer
-  "have I already done X?"-style questions.
-- **Assistant message references**: `messages.cited_diary_entry_ids` is replaced by a proper child
-  table, `message_references`, using the same `source_type`/`source_id` shape rather than a
-  diary-specific array column or a JSON blob — see [Data model](#data-model). This single
-  mechanism covers both retrieval citations (which diary/todo chunks grounded an answer) and
-  action references (which todo a chat-driven mutation affected), and the conversation UI renders
-  a chip linking to `/diaries/{id}` or `/todos/{id}` depending on `source_type`.
+- **`embedding_jobs`** identifies its source by a `source_type` (`"diary_entry"` | `"todo"`) plus
+  `source_id` (uuid) pair — plain columns, not a per-type FK, so a new data source needs no schema
+  change. Without an FK there's no DB cascade-delete; none is needed, since Qdrant cleanup happens
+  explicitly on delete (above), the worker treats a missing source row as a skip, and a leftover
+  `completed` job row is inert.
+- **`entry_chunks` payload** per point: `user_id`, `source_type`, `source_id`, `chunk_index`,
+  `chunk_text`, and `date` (feeds recency re-ranking) — a diary entry's `entry_date`; a todo's
+  `due_date` if set, else its `created_at` date. Search returns a mixed ranked list of diary and
+  todo chunks.
+- **Worker** dispatches on `job.source_type`: diary jobs chunk `DiaryEntry.content`; todo jobs
+  chunk a composed string of title, description, and a `Status: done`/`Status: pending` line, so
+  retrieval can answer "have I already done X?"-style questions.
+- **`message_references`** (see [Data model](#data-model)) uses the same `source_type`/`source_id`
+  shape for both retrieval citations and action references (a todo a chat mutation affected); the
+  conversation UI renders a chip linking to `/diaries/{id}` or `/todos/{id}` accordingly.
 
-What deliberately stays source-specific: the domain tables themselves (`diary_entries`, `todos`)
-and their own CRUD routers, since those are genuinely distinct business entities, not shared
-infrastructure — only the cross-cutting indexing/retrieval/reference machinery is generalized.
+The domain tables (`diary_entries`, `todos`) and their CRUD routers stay source-specific.
 
 ### Tool-calling: managing todos through chat
 
-Genie's existing single chat endpoint is extended, not replaced, and not split into a separate
-"todo mode." **Reads** ("what's due this week?", "have I bought milk?") go through the retrieval
-pipeline described above, exactly like diary Q&A — there's no dedicated lookup tool for todos.
-**Tool-calling is reserved for mutations**: four tools are passed to the Ollama chat call
-(`ollama>=0.6.2`'s `Client.chat()` already supports a `tools` parameter, unused until now), each
-implicitly scoped server-side to `current_user.id` and never accepting a user id as a
-model-supplied parameter:
+**Reads** ("what's due this week?", "have I bought milk?") go through the retrieval pipeline
+above, like diary Q&A — there's no lookup tool. **Tool-calling is reserved for mutations**: four
+tools (`web-api/app/todo_tools.py`) are passed to the Ollama chat call, each scoped server-side to
+`current_user.id` and never accepting a user id from the model:
 
 - `create_todo(title, description?, due_date?)`
-- `update_todo(title, ...fields to change, user_confirmed)`
-- `complete_todo(title, user_confirmed)`
-- `delete_todo(title, user_confirmed)`
+- `update_todo(title, due_date?, new_title?, new_description?, new_due_date?, user_confirmed)`
+- `complete_todo(title, due_date?, user_confirmed)`
+- `delete_todo(title, due_date?, user_confirmed)`
 
-Todos are identified to these tools **by title** (case-insensitive match, scoped to the user)
-rather than by id — retrieval already surfaces todo titles naturally in conversation, but the
-model has no reliable way to track opaque ids across turns, so requiring one would be brittle. An
-ambiguous (multiple-match) or not-found title comes back as an ordinary tool result for the model
-to resolve conversationally (e.g. asking the user which one they meant), rather than the backend
-guessing.
+Todos are identified **by title** rather than by id, since the model has no reliable way to track
+opaque ids across turns: a case-insensitive exact match wins; otherwise the closest fuzzy match
+(`difflib` similarity ≥ 0.6, and at least 0.15 ahead of the runner-up) is used. The optional
+`due_date` narrows candidates first. A not-found or ambiguous title returns an `ok: false` result
+whose message asks for more detail.
 
-**Confirmation**: `update_todo`, `complete_todo`, and `delete_todo` each require a
-`user_confirmed: bool` parameter in their tool schema; `create_todo` doesn't, since creating isn't
-destructive. The backend never executes one of the three confirming tools unless
-`user_confirmed=true` is present on the call — if it's missing or `false`, the tool result simply
-tells the model to ask the user first instead of acting. This mirrors the existing prompt-level
-scope-guarding philosophy above (a system-prompt instruction, not a separate classifier or
-state machine) while still giving the backend a mechanical gate rather than trusting the model's
-prose alone. There is no dedicated confirm/cancel UI control — confirmation happens as an ordinary
-conversational turn, the same way any other reply does.
+**Confirmation**: `update_todo`, `complete_todo`, and `delete_todo` require `user_confirmed:
+bool`; `create_todo` doesn't. The backend never executes a confirming tool unless
+`user_confirmed=true` — otherwise the result is `needs_confirmation`, telling the model to ask
+first, and the proposed call (minus `user_confirmed`) is stored on `conversations.pending_action`.
+On the next message, if a pending action exists, a separate low-temperature structured-output call
+(`pending_action_is_confirmed()`) judges whether the message confirms it; if so, the action is
+executed directly with `user_confirmed=true` and its result message is the reply, bypassing the
+LLM. Any other turn clears `pending_action`. There is no dedicated confirm/cancel UI control.
 
-**Multi-turn loop**: the single `client.chat(...)` call becomes a loop. The model is called with
-`tools=[...]`; if the response includes `message.tool_calls`, each is executed against the
-corresponding function above, and an `assistant` (tool_calls) message plus a `tool` (result)
-message are appended before calling again — capped at a small number of iterations (e.g. 4) to
-guard against a runaway loop. Once a response comes back with no tool calls, a final call is made
-with `stream=True` to stream the natural-language reply to the client exactly as today. A
-successful mutation adds a `message_references` row for the affected todo, so the reply carries a
-clickable link the user can use to quickly verify what happened.
+**Multi-turn loop** (`run_chat_with_tools()` in `web-api/app/chat.py`): the model is called with
+`tools=[...]` at `OLLAMA_TOOL_TEMPERATURE`; each returned tool call is executed and an `assistant`
+(tool_calls) message plus a `tool` (result) message are appended before calling again, up to
+`CHAT_TOOL_MAX_ITERATIONS` (default 4). Once a response has no tool calls, a final `stream=True`
+call at `OLLAMA_CHAT_TEMPERATURE` streams the reply. If a confirmed action failed and nothing was
+mutated, the failure messages are returned verbatim instead, so the model can't narrate a success
+that didn't happen. A successful mutation adds a `message_references` row for the affected todo.
+`build_system_prompt()` covers todos as an in-scope topic alongside diary excerpts and app help,
+plus the confirm-before-acting instruction.
 
-`build_system_prompt()` gains todos as a third in-scope topic (alongside diary excerpts and
-app-help content) plus the confirm-before-acting instruction above.
-
-**Resolved risk, with a residual caveat**: whether the chat model reliably supports and follows
-Ollama's tool-calling conventions — including the confirm-before-acting instruction — was an open,
-unverified risk for `gemma3:4b`, which doesn't support Ollama's `tools` capability at all.
-`OLLAMA_CHAT_MODEL` was re-pinned to `gemma4:e2b-it-qat`, which `ollama show` confirms natively
-supports both `tools` and `thinking`. Live end-to-end testing (see
-[execution plan, Section 10](execution/v0.3.0.md)) found the mechanical `user_confirmed` gate
-itself is sound — no todo was ever mutated without prior confirmation — but at the model card's
-generically recommended sampling temperature (1.0), the assistant would sometimes skip asking for
-confirmation and reply with a flat, false claim that an action had already succeeded. Lowering
-`OLLAMA_CHAT_TEMPERATURE` to 0.3 measurably reduced this in testing (0/8 vs. 1/5 trials), but did
-not mathematically guarantee it can't recur — this is a UX/trust risk (a misleading reply), not a
-data-safety one, since no unconfirmed mutation can occur regardless. Worth continued monitoring in
-real usage.
+**Known limitation**: the `user_confirmed` gate is mechanical, so no todo is mutated without
+confirmation; but the model can occasionally skip asking and falsely claim an action already
+succeeded. `OLLAMA_CHAT_TEMPERATURE=0.3` (`.env.example`) measurably reduces this (0/8 vs. 1/5
+trials at 1.0) without eliminating it.
 
 ## Data model
 
@@ -440,7 +400,7 @@ real usage.
 
 | Column       | Type                  | Notes                                   |
 |--------------|-----------------------|------------------------------------------|
-| `id`         | uuid / serial, PK      |                                          |
+| `id`         | uuid, PK               |                                          |
 | `user_id`    | uuid, FK → `users.id`  | not null, indexed, cascade-deletes with the user |
 | `title`      | text                   |                                          |
 | `content`    | text                   | markdown                                 |
@@ -476,7 +436,7 @@ shaped this way):
 
 | Column       | Type                  | Notes                                              |
 |--------------|-----------------------|---------------------------------------------------------|
-| `id`         | uuid, PK              | ordinary opaque row id — no longer doubles as the bearer secret |
+| `id`         | uuid, PK              | opaque row id; not the code itself |
 | `user_id`    | uuid, FK → `users.id` | not null, indexed, cascade-deletes with the user          |
 | `purpose`    | text                  | `email_verification` / `password_reset`; not null         |
 | `code_hash`  | text                  | not null; `hashlib.sha256` hash of the one-time code, never stored in plaintext |
@@ -484,9 +444,8 @@ shaped this way):
 | `created_at` | timestamptz           | system-set on creation                                     |
 | `expires_at` | timestamptz           | code expiry; checked on consumption                        |
 
-`embedding_jobs` table (see
-[Generalizing the indexing pipeline for todos](#generalizing-the-indexing-pipeline-for-todos) for
-why `source_type`/`source_id` is shaped this way):
+`embedding_jobs` table (see [Source-generic indexing](#source-generic-indexing) for why
+`source_type`/`source_id` is shaped this way):
 
 | Column          | Type        | Notes                                                |
 |-----------------|-------------|----------------------------------------------------------|
@@ -507,6 +466,7 @@ why `source_type`/`source_id` is shaped this way):
 | `user_id`    | uuid, FK → `users.id`  | not null, indexed, cascade-deletes with the user       |
 | `created_at` | timestamptz            | system-set on creation                                |
 | `updated_at` | timestamptz            | bumped on each new message; drives conversation-list ordering |
+| `pending_action` | jsonb              | nullable; a gated tool call (`name`, `arguments`) awaiting the user's confirmation — see [Tool-calling](#tool-calling-managing-todos-through-chat) |
 
 `messages` table (assistant-message source references live in the separate `message_references`
 table below, not a column here):
@@ -519,12 +479,9 @@ table below, not a column here):
 | `content`               | text                       | message body                                      |
 | `created_at`            | timestamptz                | system-set on creation                            |
 
-`message_references` table — a proper child table rather than a diary-only array column or a JSON
-blob (the schema has no JSON columns elsewhere), reusing the same `source_type`/`source_id` shape
-as `embedding_jobs`: covers both retrieval
-citations (a diary/todo chunk an answer was grounded in) and action references (a todo a chat
-mutation affected) with one mechanism, and cascade-deletes with its message unlike
-`embedding_jobs`'s reference, since a message and its references genuinely share one lifecycle:
+`message_references` table — an assistant message's retrieval citations and action references,
+using the same `source_type`/`source_id` shape as `embedding_jobs`; unlike `embedding_jobs`, it
+cascade-deletes with its message, since the two share one lifecycle:
 
 | Column        | Type                  | Notes                                             |
 |---------------|-----------------------|--------------------------------------------------------|
@@ -533,46 +490,147 @@ mutation affected) with one mechanism, and cascade-deletes with its message unli
 | `source_type` | text                  | `diary_entry` / `todo`; not null                         |
 | `source_id`   | uuid                  | not null, indexed                                        |
 
+## Observability
+
+`web-api` and `worker` emit logs, metrics, and traces to a self-hosted stack in the same Compose
+project; nothing leaves the host.
+
+```
+web-api ─┐  OTLP gRPC (traces + logs)            ┌─> tempo  (traces)
+         ├──────────────────────────> alloy ─────┤
+worker  ─┘                                        └─> loki   (logs, via /otlp)
+web-api:8000/metrics, worker:9101/metrics <── prometheus (scrape, 15s)
+                          grafana ──> prometheus / loki / tempo
+```
+
+- **Bootstrap** (`web-api/app/observability.py`): each process calls
+  `configure_tracing(service_name)` then `configure_logging()` at startup — `app/main.py` with
+  `"web-api"`, `app/worker.py` with `"worker"`. Call sites log via `get_logger(__name__)` (a
+  `structlog` logger).
+- **Logging**: `structlog` and stdlib `logging` share one root-logger setup at INFO level, with
+  two handlers:
+  - stdout: one JSON object per line with `timestamp`, `level`, `logger`, `event`, plus
+    `trace_id`/`span_id` when a span is active.
+  - OTLP: an OTel `LoggingHandler` → `BatchLogRecordProcessor(OTLPLogExporter)` to
+    `OTEL_EXPORTER_OTLP_ENDPOINT`, sharing the tracer provider's `service.name` resource.
+
+  uvicorn's loggers are routed to the root handlers, and `uvicorn.access` lines for `/health` and
+  `/metrics` are dropped. `configure_logging(export=False)` skips the OTLP handler; it's used by
+  `alembic/env.py` (short-lived CLI runs).
+- **Tracing**: a `TracerProvider` with `service.name` (`web-api`/`worker`), a
+  `TraceIdRatioBased(OTEL_TRACES_SAMPLER_RATIO)` sampler, and a `BatchSpanProcessor` exporting
+  over OTLP gRPC to `OTEL_EXPORTER_OTLP_ENDPOINT`. Auto-instrumentation: `FastAPIInstrumentor`
+  (`web-api`), `SQLAlchemyInstrumentor` and `HTTPXClientInstrumentor` (both; covers the Ollama
+  and Qdrant clients). Custom spans:
+
+  | Span                | Service   | Attributes                                                         |
+  |---------------------|-----------|---------------------------------------------------------------------|
+  | `chat.embed_query`  | `web-api` |                                                                      |
+  | `chat.qdrant_search`| `web-api` |                                                                      |
+  | `chat.build_prompt` | `web-api` |                                                                      |
+  | `chat.ollama_call`  | `web-api` | `chat.iteration` (1-based tool-loop iteration)                       |
+  | `chat.tool_call`    | `web-api` | `tool.name`, `tool.user_confirmed`, `tool.gated` (held for confirmation) |
+  | `job.process`       | `worker`  | root span per claimed job: `job.id`, `source_type`, `source_id`, `job.status` |
+  | `job.chunk`         | `worker`  | `source_type`, `source_id`                                          |
+  | `job.embed_chunks`  | `worker`  | `source_type`, `source_id`, `chunk_count`                           |
+  | `job.qdrant_upsert` | `worker`  | `source_type`, `source_id`                                          |
+
+  `job.*` stage spans record an exception and `ERROR` status when the stage raises, as does
+  `job.process`. The worker's idle polling query runs under `suppress_instrumentation()` and
+  exports nothing.
+- **Metrics**:
+  - `web-api`: `GET /metrics` (unauthenticated) via `prometheus-fastapi-instrumentator` —
+    `http_requests_total`, `http_request_duration_seconds`,
+    `http_request_duration_highr_seconds` (per-route metrics labelled by `handler`).
+  - `worker`: `prometheus_client.start_http_server(WORKER_METRICS_PORT)`, exposed on the Compose
+    network only.
+  - Custom metrics:
+
+    | Metric                                     | Type      | Labels                     | Service   |
+    |--------------------------------------------|-----------|----------------------------|-----------|
+    | `living_genie_tool_calls_total`            | counter   | `tool_name`, `user_confirmed` | `web-api` |
+    | `living_genie_rag_retrieval_seconds`       | histogram | —                          | `web-api` |
+    | `living_genie_worker_jobs_total`           | counter   | `source_type`, `status`    | `worker`  |
+    | `living_genie_worker_job_duration_seconds` | histogram | `source_type`              | `worker`  |
+
+- **Collection** (config at the repo root):
+  - `alloy/config.alloy`: `otelcol.receiver.otlp` (gRPC `:4317`) → `otelcol.processor.batch` →
+    traces to `tempo:4317`, logs to `http://loki:3100/otlp`.
+  - `loki/loki-config.yaml`: native OTLP ingestion. `service.name` is indexed as the
+    `service_name` label, and `trace_id`/`span_id` are stored as structured metadata.
+  - `tempo/tempo.yaml`: OTLP gRPC receiver, single-binary mode.
+  - `prometheus/prometheus.yml`: scrapes `web-api:8000` and `worker:9101` every 15s.
+- **Grafana** (`grafana/`): provisioned datasources Prometheus (default), Loki, and Tempo (uids
+  `prometheus`/`loki`/`tempo`). Tempo's `tracesToLogsV2` opens
+  `{service_name="<span's service.name>"} | trace_id="<trace id>"` in Loki ("Related logs" on a
+  span). Loki's `trace_id` derived field links back to Tempo. The file-provisioned "Living Genie
+  overview" dashboard (folder "Living Genie", `grafana/dashboards/overview.json`) has three rows:
+  - web-api: request rate by route, 5xx share, p50/p95 latency
+  - Chat / RAG: tool calls by `tool_name`/`user_confirmed`, RAG retrieval p50/p95
+  - Worker: jobs by `source_type`/`status`, job duration p95 by `source_type`
+- **Settings** (`web-api/app/settings.py`/`.env.example`):
+
+  | Variable                      | Default              | Consumed by                                  |
+  |-------------------------------|----------------------|----------------------------------------------|
+  | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://alloy:4317`  | `web-api`, `worker` (traces and logs)        |
+  | `OTEL_TRACES_SAMPLER_RATIO`   | `1.0`                | `web-api`, `worker`                          |
+  | `WORKER_METRICS_PORT`         | `9101`               | `worker` (Prometheus target is hardcoded to match) |
+  | `PROMETHEUS_RETENTION`        | `15d`                | `prometheus` `--storage.tsdb.retention.time` |
+  | `LOKI_RETENTION_PERIOD`       | `168h`               | `loki` `limits_config.retention_period`      |
+  | `TEMPO_RETENTION`             | `336h`               | `tempo` `block_retention`                    |
+
+  The retention variables are read from `web-api/.env` by the Compose services (via `env_file`
+  and env expansion), not by application code.
+
 ## Containerization
 
 - Separate `Dockerfile` for the frontend and for the backend; the `worker` service reuses the
   backend's build/image with a different command.
-- A root-level `docker-compose.yml` wires together: `web`, `web-api`, `postgres` (with a named
+- A root-level `docker-compose.yaml` wires together: `web`, `web-api`, `postgres` (with a named
   volume so diary data persists across restarts), a second named volume for the backend's
   uploaded-images directory, `ollama` (named volume `ollama_data:/root/.ollama` for pulled
   models), a one-shot `ollama-init` service that runs `ollama pull` for the configured embedding
   and chat models against the `ollama` service and exits once done, `qdrant` (named volume
-  `qdrant_data:/qdrant/storage`), and `worker` (no exposed port; depends on `postgres`, `qdrant`,
-  and `ollama` all being healthy).
-- Configuration via environment variables, e.g. `DATABASE_URL` for the backend's Postgres
-  connection, plus `QDRANT_URL`, `OLLAMA_URL`, `OLLAMA_EMBEDDING_MODEL`, and `OLLAMA_CHAT_MODEL`
-  for `web-api`/`worker`. Each service owns its own `.env`/`.env.example` (e.g.
-  `web-api/.env.example`) rather than a single shared root file; Compose wires each in per-service
-  via `env_file:`.
+  `qdrant_data:/qdrant/storage`), and `worker` (metrics port `9101` exposed to the Compose network
+  only; depends on `postgres`, `qdrant`, and `ollama` all being healthy). `web-api` and `worker`
+  also depend on `alloy` being started.
+- Observability services (see [Observability](#observability)): `prometheus`
+  (`prom/prometheus:v3.15.0`), `loki` (`grafana/loki:3.7.8`), `tempo` (`grafana/tempo:3.0.3`),
+  `alloy` (`grafana/alloy:v1.20.0`), and `grafana` (`grafana/grafana:13.2.2`). Each has its own
+  named volume, and config files are mounted read-only. Only `grafana` (`3000`) and `prometheus`
+  (`9090`) are published to the host. Grafana's admin login comes from `GRAFANA_ADMIN_USER`/
+  `GRAFANA_ADMIN_PASSWORD` in the root `.env` (default `admin`/`admin`), and usage reporting is
+  disabled in Loki, Tempo, and Grafana.
+- Configuration via environment variables. `web-api/.env` (shared by `web-api`, `worker`,
+  `ollama-init`, and the `prometheus`/`loki`/`tempo` retention flags) holds application settings.
+  Compose overrides the in-network `DATABASE_URL`, `QDRANT_URL`, and `OLLAMA_URL`. The root `.env`
+  holds Compose-level values: `POSTGRES_*` and `GRAFANA_ADMIN_*`. `web/.env` holds the frontend's.
+  Each has a matching `.env.example`.
 - **Local dev only**: `docker-compose.dev.yaml` adds a `mailpit` container (SMTP catcher + web
   UI, `axllent/mailpit`, no persistent volume) so verification/reset emails can be viewed locally
-  without a real SMTP provider account; `web-api`'s dev environment points `SMTP_HOST`/
-  `SMTP_PORT` at it. The base `docker-compose.yaml` is unchanged — production SMTP flows through
-  `web-api/.env` like any other setting, pointed at whatever real provider is configured.
+  without a real SMTP provider account; `web-api`'s dev environment points `SMTP_HOST` at it. It
+  also switches `web-api`, `worker`, and `web` to their `dev` build targets with source
+  bind-mounted for hot reload. In the base `docker-compose.yaml`, SMTP comes from `web-api/.env`
+  like any other setting.
 
-## Repository layout (proposed)
+## Repository layout
 
 ```
 web/         React + TypeScript app
-web-api/     FastAPI app
-docs/        Requirements, architecture, roadmap
+web-api/     FastAPI app and indexing worker (app/worker.py)
+docs/        Requirements, execution plans, architecture, roadmap, release notes
+prometheus/  Prometheus scrape config
+loki/        Loki config
+tempo/       Tempo config
+alloy/       Grafana Alloy (OTLP collector) config
+grafana/     Grafana provisioning (datasources, dashboard provider) and dashboards
 ```
-
-This layout is not created by documentation alone — it will be established when infrastructure
-is initialized.
 
 ## Future considerations
 
 - **Future data sources**: the roadmap describes the chatbot as covering "diaries and future data
-  sources." Diary entries and todos are both wired up today, and the indexing/retrieval pipeline —
-  `embedding_jobs`, the Qdrant collection/payload (`entry_chunks`, `source_type`/`source_id`), the
-  worker, and the `message_references` table — is source-type-generic rather than tied to either
-  one, so a future third data source should need no further schema change to those shared pieces,
-  just a new `source_type` value and a router for the new domain entity. What stays source-specific, deliberately,
-  are the domain tables themselves (`diary_entries`, `todos`) and their own CRUD routers, since
-  those are genuinely distinct business entities, not shared infrastructure.
+  sources." Because the indexing/retrieval pipeline is source-generic (see
+  [Source-generic indexing](#source-generic-indexing)), a new data source needs a new
+  `source_type` value, its own domain table and CRUD router, and a worker branch composing its
+  chunk text. It needs no schema change to `embedding_jobs`, `entry_chunks`, or
+  `message_references`.

@@ -1,17 +1,35 @@
-import logging
 import time
 
+from opentelemetry import trace
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.instrumentation.utils import suppress_instrumentation
+from opentelemetry.trace import Span, Status, StatusCode
+from prometheus_client import Counter, Histogram, start_http_server
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.chunking import chunk_text
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.embeddings import embed_texts
 from app.models import DiaryEntry, EmbeddingJob, Todo
+from app.observability import configure_logging, configure_tracing, get_logger
 from app.settings import get_settings
 from app.vector_store import ensure_collection, upsert_chunks
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+tracer = trace.get_tracer(__name__)
+
+JOB_COUNTER = Counter(
+    "living_genie_worker_jobs_total",
+    "Embedding jobs processed by the worker, broken down by source type and final status.",
+    ["source_type", "status"],
+)
+JOB_DURATION = Histogram(
+    "living_genie_worker_job_duration_seconds",
+    "Duration of the chunk/embed/upsert stage of embedding job processing, by source type.",
+    ["source_type"],
+)
 
 
 def reset_stuck_jobs(db: Session) -> int:
@@ -30,11 +48,29 @@ def process_next_job(db: Session) -> bool:
         .limit(1)
         .with_for_update(skip_locked=True)
     )
-    job = db.scalars(stmt).first()
-    if job is None:
-        db.rollback()
-        return False
+    # Polling is untraced: otherwise every idle poll exports its own single-span SELECT trace,
+    # burying the real job traces in Tempo.
+    with suppress_instrumentation():
+        job = db.scalars(stmt).first()
+        if job is None:
+            db.rollback()
+            return False
 
+    # One root span per job, so the status bookkeeping queries and every stage span (with their
+    # Postgres/Ollama/Qdrant children) land in a single trace.
+    with tracer.start_as_current_span(
+        "job.process",
+        attributes={
+            "job.id": str(job.id),
+            "source_type": job.source_type,
+            "source_id": str(job.source_id),
+        },
+    ) as job_span:
+        _process_job(db, job, job_span)
+    return True
+
+
+def _process_job(db: Session, job: EmbeddingJob, job_span: Span) -> None:
     job.status = "processing"
     db.commit()
 
@@ -44,32 +80,54 @@ def process_next_job(db: Session) -> bool:
         source = db.get(Todo, job.source_id)
     if source is None:
         logger.info("%s %s gone; skipping job %s", job.source_type, job.source_id, job.id)
-        return True
+        job_span.set_attribute("job.status", "skipped")
+        return
 
     settings = get_settings()
+    span_attrs = {"source_type": job.source_type, "source_id": str(job.source_id)}
+    start = time.perf_counter()
     try:
-        if job.source_type == "diary_entry":
-            composed = f"{source.title}\n\n{source.content}" if source.content else source.title
-            chunks = chunk_text(
-                composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+        # Each stage span records the exception and sets ERROR status as it propagates out, before
+        # the except block's failure bookkeeping runs, so a failed job's trace shows its stage.
+        with _stage_span("job.chunk", span_attrs):
+            if job.source_type == "diary_entry":
+                composed = (
+                    f"{source.title}\n\n{source.content}" if source.content else source.title
+                )
+                chunks = chunk_text(
+                    composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+                )
+                source_date = source.entry_date
+            else:
+                status_text = "done" if source.completed else "pending"
+                composed = f"{source.title}\n{source.description or ''}\nStatus: {status_text}"
+                chunks = chunk_text(
+                    composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
+                )
+                source_date = source.due_date or source.created_at.date()
+        with _stage_span("job.embed_chunks", span_attrs) as span:
+            span.set_attribute("chunk_count", len(chunks))
+            vectors = embed_texts(chunks, kind="passage") if chunks else []
+        with _stage_span("job.qdrant_upsert", span_attrs):
+            upsert_chunks(
+                job.source_type, job.source_id, source.user_id, source_date, chunks, vectors
             )
-            source_date = source.entry_date
-        else:
-            status_text = "done" if source.completed else "pending"
-            composed = f"{source.title}\n{source.description or ''}\nStatus: {status_text}"
-            chunks = chunk_text(
-                composed, settings.embedding_chunk_size, settings.embedding_chunk_overlap
-            )
-            source_date = source.due_date or source.created_at.date()
-        vectors = embed_texts(chunks, kind="passage") if chunks else []
-        upsert_chunks(job.source_type, job.source_id, source.user_id, source_date, chunks, vectors)
         job.status = "completed"
         db.commit()
     except Exception as exc:
         db.rollback()
+        job_span.set_status(Status(StatusCode.ERROR, str(exc)))
         _fail_job(db, job.id, exc)
+    finally:
+        JOB_DURATION.labels(source_type=job.source_type).observe(time.perf_counter() - start)
+        JOB_COUNTER.labels(source_type=job.source_type, status=job.status).inc()
+        job_span.set_attribute("job.status", job.status)
 
-    return True
+
+def _stage_span(name: str, attributes: dict[str, str]):
+    return tracer.start_as_current_span(
+        name, attributes=attributes, record_exception=True, set_status_on_exception=True
+    )
 
 
 def _fail_job(db: Session, job_id, exc: Exception) -> None:
@@ -109,7 +167,11 @@ def run_forever() -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    configure_tracing("worker")
+    configure_logging()
+    SQLAlchemyInstrumentor().instrument(engine=engine)
+    HTTPXClientInstrumentor().instrument()
+    start_http_server(get_settings().worker_metrics_port)
     startup()
     run_forever()
 

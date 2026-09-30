@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     qdrant_url: str
     ollama_url: str
     ollama_embedding_model: str = "embeddinggemma:300m"
-    ollama_chat_model: str = "gemma3:4b"
+    ollama_chat_model: str = "gemma4:e2b-it-qat"
     embedding_chunk_size: int = 550
     embedding_chunk_overlap: int = 120
     retrieval_top_k: int = 5
@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     password_reset_request_cooldown_seconds: int = 60
     email_code_length: int = 8
     email_code_max_attempts: int = 5
+    otel_exporter_otlp_endpoint: str = "http://alloy:4317"
+    otel_traces_sampler_ratio: float = 1.0
+    worker_metrics_port: int = 9101
+    prometheus_retention: str = "15d"
+    loki_retention_period: str = "168h"
+    tempo_retention: str = "336h"
 
 
 @lru_cache

@@ -1,5 +1,3 @@
-from logging.config import fileConfig
-
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
@@ -17,6 +15,7 @@ from app.models import (  # noqa: F401  (registers the models on Base.metadata)
     User,
     UserSession,
 )
+from app.observability import configure_logging
 from app.settings import get_settings
 
 # this is the Alembic Config object, which provides
@@ -24,10 +23,11 @@ from app.settings import get_settings
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Log through the app's structured JSON setup (stdout only, see configure_logging) rather than
+# alembic.ini's plain-text fileConfig. Skipped when the caller already configured logging and runs
+# migrations in-process (the test suite).
+if config.attributes.get("configure_logger", True):
+    configure_logging(export=False)
 
 target_metadata = Base.metadata
 

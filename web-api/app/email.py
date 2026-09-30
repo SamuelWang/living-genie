@@ -1,12 +1,12 @@
-import logging
 from email.message import EmailMessage
 
 import aiosmtplib
 
 from app.models import User
+from app.observability import get_logger
 from app.settings import get_settings
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _EMAIL_COPY = {
     "en": {
