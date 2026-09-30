@@ -69,6 +69,10 @@ def configure_logging(export: bool = True) -> None:
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
+        # Run in the structlog chain (not just the stdout formatter) so the OTLP handler, which
+        # exports the event dict as-is, also gets interpolated messages and rendered tracebacks.
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.format_exc_info,
     ]
 
     structlog.configure(

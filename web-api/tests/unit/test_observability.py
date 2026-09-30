@@ -125,3 +125,67 @@ def test_configure_logging_takes_over_uvicorn_loggers_and_drops_probe_access_lin
         ("uvicorn.error", "Application startup complete."),
         ("uvicorn.access", '10.0.0.1:1234 - "GET /todos HTTP/1.1" 200'),
     }
+
+
+_FORMATTING_SCRIPT = textwrap.dedent(
+    """
+    import logging, os, sys
+    from app.observability import configure_logging, get_logger
+
+    configure_logging(export=False)
+    logger = get_logger("tests.observability")
+    logger.info("Reset %d stuck job(s) %s", 3, "abc")
+    try:
+        raise ValueError("structlog failure")
+    except ValueError:
+        logger.exception("structlog exception %s", "c1")
+    try:
+        raise ValueError("stdlib failure")
+    except ValueError:
+        logging.getLogger("tests.stdlib").exception("stdlib exception %s", "c2")
+    sys.stdout.flush()
+    os._exit(0)
+    """
+)
+
+
+def test_configure_logging_interpolates_args_and_renders_tracebacks():
+    result = subprocess.run(
+        [sys.executable, "-c", _FORMATTING_SCRIPT],
+        cwd=WEB_API_ROOT,
+        env={**os.environ, "PYTHONPATH": str(WEB_API_ROOT)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+    lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    by_event = {line["event"]: line for line in lines}
+
+    assert "positional_args" not in by_event["Reset 3 stuck job(s) abc"]
+    for event, message in (
+        ("structlog exception c1", "structlog failure"),
+        ("stdlib exception c2", "stdlib failure"),
+    ):
+        line = by_event[event]
+        assert "exc_info" not in line
+        assert line["exception"].startswith("Traceback (most recent call last):")
+        assert f"ValueError: {message}" in line["exception"]
+
+
+def test_otel_log_record_carries_interpolated_message_and_traceback(log_exporter):
+    logger = get_logger("tests.observability")
+    try:
+        raise ValueError("otel failure")
+    except ValueError:
+        logger.exception("otel exception %s", "c3")
+
+    bodies = [
+        record.log_record.body
+        for record in log_exporter.get_finished_logs()
+        if "otel exception" in str(record.log_record.body)
+    ]
+    assert len(bodies) == 1
+    assert bodies[0]["event"] == "otel exception c3"
+    assert "ValueError: otel failure" in bodies[0]["exception"]
