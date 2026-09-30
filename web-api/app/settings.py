@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     qdrant_url: str
     ollama_url: str
     ollama_embedding_model: str = "embeddinggemma:300m"
-    ollama_chat_model: str = "gemma3:4b"
+    ollama_chat_model: str = "gemma4:e2b-it-qat"
     embedding_chunk_size: int = 550
     embedding_chunk_overlap: int = 120
     retrieval_top_k: int = 5
