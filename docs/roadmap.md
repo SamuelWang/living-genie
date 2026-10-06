@@ -37,3 +37,21 @@
   API, worker, Postgres, Qdrant, and Ollama calls, including stage-level spans for the chat/RAG
   pipeline and the indexing worker's chunk/embed/upsert pipeline.
 - Provide Grafana dashboards correlating logs, metrics, and traces for debugging.
+
+## v0.6.0
+
+- Migrate the AI layer (chat models, tool calling, streaming, embeddings) to open-source
+  LangChain, with no LangSmith or other hosted LangChain service.
+- Support cloud chat models from Anthropic, OpenAI, and Google Gemini alongside local Ollama
+  models, each model individually enabled through environment settings.
+- Let users pick any enabled model per conversation from the chat UI, switch it
+  mid-conversation, and see which models send data off the host.
+- Make the embedding provider configurable system-wide (Ollama or a cloud provider), with a
+  re-index path when it changes.
+- Drop the Qdrant recency re-ranking: retrieval uses vector similarity alone, and every embedded
+  chunk includes its full context (diary date and title; todo status and dates).
+- Simplify Genie's todo actions to pure LangChain tool calling, removing the stored
+  pending-action confirmation flow, and replay full multi-turn history (including tool calls).
+- Add a per-model agent scenario test suite to check tool-calling behavior on every enabled model.
+- Split Ollama into its own Docker Compose file so it only runs when local models are enabled.
+- Update all documentation for the multi-provider setup.
